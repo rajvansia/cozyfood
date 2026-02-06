@@ -232,7 +232,7 @@ export const useAppState = () => {
   const generateGroceryList = useCallback(() => {
     const ingredients = aggregateIngredientsFromPlan(meals, weeklyPlan);
     setGroceryItems((prev) => mergeGroceryItems(prev, ingredients, defaultWeekStart));
-    void syncCall(() => api.generateGroceryList(weeklyPlan));
+    void syncCall(() => api.generateGroceryList(ingredients, defaultWeekStart));
     saveWeeklySnapshot();
   }, [meals, weeklyPlan, syncCall, saveWeeklySnapshot, defaultWeekStart]);
 

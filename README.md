@@ -14,12 +14,11 @@ npm run dev
 Create a `.env` file (or set env vars in your host):
 
 ```bash
-VITE_API_BASE="https://script.google.com/macros/s/REPLACE_WITH_YOUR_DEPLOYMENT/exec"
-VITE_API_METHOD_OVERRIDE=true
+VITE_SUPABASE_URL="https://your-project.supabase.co"
+VITE_SUPABASE_PUBLISHABLE_DEFAULT_KEY="your-supabase-publishable-key"
 ```
 
-- `VITE_API_BASE` points to your Google Apps Script deployment.
-- `VITE_API_METHOD_OVERRIDE=true` forces PATCH/DELETE to be sent as POST with a `method=` query param, which is more compatible with Apps Script.
+- `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_DEFAULT_KEY` configure the Supabase client.
 
 ## PWA Notes
 
@@ -30,8 +29,7 @@ VITE_API_METHOD_OVERRIDE=true
 
 - `src/pages` — Grocery, Meals, Weekly Planner
 - `src/components` — reusable UI, icons, and navigation
-- `src/lib` — types, mock data, API client, aggregation helpers
-- `apps-script/Code.gs` — sample Apps Script backend for Google Sheets
+- `src/lib` — types, mock data, Supabase API client, aggregation helpers
 
 ## Meal → Grocery Aggregation
 
@@ -44,15 +42,21 @@ When you tap **Generate Grocery List**, the app:
 
 The logic lives in `src/lib/utils.ts` and is called by `useAppState`.
 
-## Sheets Needed
+## Supabase Schema
 
-Create these tabs in your Google Sheet (row 1 = headers):
+Create tables with the following columns (snake_case recommended):
 
-- `GroceryItems`: `id | name | quantity | unit | category | checked | weekStart | updatedAt`
-- `Meals`: `id | mealName | notes`
-- `MealIngredients`: `mealId | ingredient | quantity | unit`
-- `WeeklyPlan`: `day | mealId`
-- `WeeklyPlanHistory`: `weekStart | day | mealId | savedAt`
+- `grocery_items`: `id (uuid)`, `name (text)`, `quantity (numeric)`, `unit (text)`, `category (text)`, `checked (bool)`, `week_start (date)`, `updated_at (timestamptz)`
+- `meals`: `id (uuid)`, `meal_name (text)`, `notes (text)`
+- `meal_ingredients`: `id (uuid)`, `meal_id (uuid)`, `ingredient (text)`, `quantity (numeric)`, `unit (text)`
+- `weekly_plan`: `day (text, pk)`, `meal_id (uuid)`, `updated_at (timestamptz)`
+- `weekly_plan_history`: `week_start (date)`, `day (text)`, `meal_id (uuid)`, `saved_at (timestamptz)`
+
+Recommended indexes:
+- Unique index on `grocery_items (week_start, name, unit)` for clean merges.
+
+RLS:
+- For quick setup, disable RLS or add policies that allow your users to read/write these tables.
 
 ## Mock Data Fallback
 

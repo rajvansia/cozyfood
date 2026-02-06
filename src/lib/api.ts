@@ -1,85 +1,344 @@
-import { GroceryItem, Meal, WeeklyPlan, WeeklyPlanSnapshot } from './types';
+import { supabase } from './supabase';
+import { GroceryItem, Ingredient, Meal, WeeklyPlan, WeeklyPlanSnapshot } from './types';
+import { generateId, getWeekStartKey, normalizeName } from './utils';
 
-const RAW_API_BASE = import.meta.env.VITE_API_BASE as string | undefined;
-const API_BASE = import.meta.env.DEV
-  ? '/api'
-  : RAW_API_BASE
-    ? RAW_API_BASE.replace(/\/+$/, '')
-    : undefined;
-const METHOD_OVERRIDE = import.meta.env.VITE_API_METHOD_OVERRIDE === 'true';
+const isConfigured = Boolean(supabase);
 
-type FetchOptions = RequestInit & { json?: unknown };
+const mapGroceryRow = (row: any): GroceryItem => ({
+  id: row.id,
+  name: row.name,
+  quantity: Number(row.quantity),
+  unit: row.unit ?? undefined,
+  category: row.category,
+  checked: Boolean(row.checked),
+  weekStart: row.week_start,
+  updatedAt: row.updated_at
+});
 
-const buildUrl = (path: string, method: string) => {
-  const params = new URLSearchParams();
-  if (METHOD_OVERRIDE && method !== 'GET' && method !== 'POST') {
-    params.set('method', method);
-  }
-  const query = params.toString();
-  if (!query) return `${API_BASE}${path}`;
-  const joiner = path.includes('?') ? '&' : '?';
-  return `${API_BASE}${path}${joiner}${query}`;
-};
+const mapGroceryToRow = (item: GroceryItem) => ({
+  id: item.id,
+  name: item.name,
+  quantity: item.quantity,
+  unit: item.unit ?? null,
+  category: item.category,
+  checked: item.checked,
+  week_start: item.weekStart,
+  updated_at: item.updatedAt
+});
 
-const fetchJson = async <T>(path: string, options: FetchOptions = {}): Promise<T> => {
-  if (!API_BASE) {
-    throw new Error('API base URL not configured');
-  }
-  const method = (options.method ?? 'GET').toUpperCase();
-  const useOverride = METHOD_OVERRIDE && method !== 'GET' && method !== 'POST';
-  const body = options.json ? JSON.stringify(options.json) : options.body;
-  const response = await fetch(buildUrl(path, method), {
-    ...options,
-    method: useOverride ? 'POST' : method,
-    headers: {
-      ...(options.headers ?? {})
-    },
-    body
-  });
+const mapMealRow = (row: any): Meal => ({
+  id: row.id,
+  mealName: row.meal_name,
+  notes: row.notes ?? undefined,
+  ingredients: []
+});
 
-  if (!response.ok) {
-    throw new Error(`API error: ${response.status}`);
-  }
+const mapIngredientRow = (row: any): Ingredient => ({
+  id: row.id,
+  ingredient: row.ingredient,
+  quantity: Number(row.quantity),
+  unit: row.unit ?? undefined
+});
 
-  return (await response.json()) as T;
-};
-
-const safeFetch = async <T>(path: string, options?: FetchOptions): Promise<T | null> => {
+const safe = async <T>(fn: () => Promise<T>): Promise<T | null> => {
+  if (!supabase) return null;
   try {
-    return await fetchJson<T>(path, options);
+    return await fn();
   } catch {
     return null;
   }
 };
 
 export const api = {
-  isConfigured: Boolean(API_BASE),
-  getGroceryItems: () => safeFetch<GroceryItem[]>('/grocery-items'),
-  createGroceryItem: (item: GroceryItem) =>
-    safeFetch<GroceryItem>('/grocery-items', { method: 'POST', json: item }),
-  updateGroceryItem: (id: string, item: Partial<GroceryItem>) =>
-    safeFetch<GroceryItem>(`/grocery-items/${id}`, { method: 'PATCH', json: item }),
-  deleteGroceryItem: (id: string) =>
-    safeFetch<{ ok: boolean }>(`/grocery-items/${id}`, { method: 'DELETE' }),
-  getMeals: () => safeFetch<Meal[]>('/meals'),
-  createMeal: (meal: Meal) =>
-    safeFetch<Meal>('/meals', { method: 'POST', json: meal }),
-  updateMeal: (id: string, meal: Meal) =>
-    safeFetch<Meal>(`/meals/${id}`, { method: 'PUT', json: meal }),
-  deleteMeal: (id: string) =>
-    safeFetch<{ ok: boolean }>(`/meals/${id}`, { method: 'DELETE' }),
-  getWeeklyPlan: () => safeFetch<WeeklyPlan>('/weekly-plan'),
-  updateWeeklyPlan: (plan: WeeklyPlan) =>
-    safeFetch<WeeklyPlan>('/weekly-plan', { method: 'PUT', json: plan }),
-  getWeeklyPlanHistory: () => safeFetch<WeeklyPlanSnapshot[]>('/weekly-plan-history'),
-  saveWeeklyPlanHistory: (snapshot: WeeklyPlanSnapshot) =>
-    safeFetch<WeeklyPlanSnapshot>('/weekly-plan-history', {
-      method: 'POST',
-      json: snapshot
+  isConfigured,
+  getGroceryItems: () =>
+    safe(async () => {
+  const { data, error } = await supabase
+        .from('grocery_items')
+        .select('*')
+        .order('updated_at', { ascending: false });
+      if (error) throw error;
+      return (data ?? []).map(mapGroceryRow);
     }),
-  generateGroceryList: (plan: WeeklyPlan) =>
-    safeFetch<{ ok: boolean; added?: number }>('/generate-grocery-list', {
-      method: 'POST',
-      json: plan
+  createGroceryItem: (item: GroceryItem) =>
+    safe(async () => {
+      const { data, error } = await supabase
+        .from('grocery_items')
+        .insert(mapGroceryToRow(item))
+        .select('*')
+        .single();
+      if (error) throw error;
+      return mapGroceryRow(data);
+    }),
+  updateGroceryItem: (id: string, item: Partial<GroceryItem>) =>
+    safe(async () => {
+      const payload: any = { ...item };
+      if (payload.weekStart) {
+        payload.week_start = payload.weekStart;
+        delete payload.weekStart;
+      }
+      if (payload.updatedAt) {
+        payload.updated_at = payload.updatedAt;
+        delete payload.updatedAt;
+      }
+      const { data, error } = await supabase
+        .from('grocery_items')
+        .update(payload)
+        .eq('id', id)
+        .select('*')
+        .single();
+      if (error) throw error;
+      return mapGroceryRow(data);
+    }),
+  deleteGroceryItem: (id: string) =>
+    safe(async () => {
+      const { error } = await supabase.from('grocery_items').delete().eq('id', id);
+      if (error) throw error;
+      return { ok: true };
+    }),
+  getMeals: () =>
+    safe(async () => {
+      const { data: mealsData, error: mealsError } = await supabase
+        .from('meals')
+        .select('*')
+        .order('meal_name');
+      if (mealsError) throw mealsError;
+
+      const { data: ingredientData, error: ingredientError } = await supabase
+        .from('meal_ingredients')
+        .select('*');
+      if (ingredientError) throw ingredientError;
+
+      const mealMap = new Map<string, Meal>();
+      (mealsData ?? []).forEach((row) => {
+        mealMap.set(row.id, mapMealRow(row));
+      });
+
+      (ingredientData ?? []).forEach((row) => {
+        const meal = mealMap.get(row.meal_id);
+        if (meal) {
+          meal.ingredients.push(mapIngredientRow(row));
+        }
+      });
+
+      return Array.from(mealMap.values());
+    }),
+  createMeal: (meal: Meal) =>
+    safe(async () => {
+      const { error: mealError } = await supabase.from('meals').insert({
+        id: meal.id,
+        meal_name: meal.mealName,
+        notes: meal.notes ?? null
+      });
+      if (mealError) throw mealError;
+
+      if (meal.ingredients.length) {
+        const { error: ingredientsError } = await supabase.from('meal_ingredients').insert(
+          meal.ingredients.map((ingredient) => ({
+            id: ingredient.id || generateId(),
+            meal_id: meal.id,
+            ingredient: ingredient.ingredient,
+            quantity: ingredient.quantity,
+            unit: ingredient.unit ?? null
+          }))
+        );
+        if (ingredientsError) throw ingredientsError;
+      }
+
+      return meal;
+    }),
+  updateMeal: (id: string, meal: Meal) =>
+    safe(async () => {
+      const { error: mealError } = await supabase
+        .from('meals')
+        .update({ meal_name: meal.mealName, notes: meal.notes ?? null })
+        .eq('id', id);
+      if (mealError) throw mealError;
+
+      const { error: deleteError } = await supabase
+        .from('meal_ingredients')
+        .delete()
+        .eq('meal_id', id);
+      if (deleteError) throw deleteError;
+
+      if (meal.ingredients.length) {
+        const { error: ingredientsError } = await supabase.from('meal_ingredients').insert(
+          meal.ingredients.map((ingredient) => ({
+            id: ingredient.id || generateId(),
+            meal_id: id,
+            ingredient: ingredient.ingredient,
+            quantity: ingredient.quantity,
+            unit: ingredient.unit ?? null
+          }))
+        );
+        if (ingredientsError) throw ingredientsError;
+      }
+
+      return meal;
+    }),
+  deleteMeal: (id: string) =>
+    safe(async () => {
+      const { error: deleteIngredientsError } = await supabase
+        .from('meal_ingredients')
+        .delete()
+        .eq('meal_id', id);
+      if (deleteIngredientsError) throw deleteIngredientsError;
+
+      const { error } = await supabase.from('meals').delete().eq('id', id);
+      if (error) throw error;
+      return { ok: true };
+    }),
+  getWeeklyPlan: () =>
+    safe(async () => {
+      const { data, error } = await supabase.from('weekly_plan').select('*');
+      if (error) throw error;
+      const plan: WeeklyPlan = {
+        mon: null,
+        tue: null,
+        wed: null,
+        thu: null,
+        fri: null,
+        sat: null,
+        sun: null
+      };
+      (data ?? []).forEach((row) => {
+        if (row.day && row.day in plan) {
+          plan[row.day as keyof WeeklyPlan] = row.meal_id || null;
+        }
+      });
+      return plan;
+    }),
+  updateWeeklyPlan: (plan: WeeklyPlan) =>
+    safe(async () => {
+      const payload = Object.keys(plan).map((day) => ({
+        day,
+        meal_id: plan[day as keyof WeeklyPlan] ?? null,
+        updated_at: new Date().toISOString()
+      }));
+      const { error } = await supabase
+        .from('weekly_plan')
+        .upsert(payload, { onConflict: 'day' });
+      if (error) throw error;
+      return plan;
+    }),
+  getWeeklyPlanHistory: () =>
+    safe(async () => {
+      const { data, error } = await supabase
+        .from('weekly_plan_history')
+        .select('*')
+        .order('week_start', { ascending: false });
+      if (error) throw error;
+
+      const grouped = new Map<string, WeeklyPlanSnapshot>();
+      (data ?? []).forEach((row) => {
+        const key = `${row.week_start}__${row.saved_at}`;
+        if (!grouped.has(key)) {
+          grouped.set(key, {
+            weekStart: row.week_start,
+            savedAt: row.saved_at,
+            days: {
+              mon: null,
+              tue: null,
+              wed: null,
+              thu: null,
+              fri: null,
+              sat: null,
+              sun: null
+            }
+          });
+        }
+        const snapshot = grouped.get(key);
+        if (snapshot && row.day) {
+          snapshot.days[row.day as keyof WeeklyPlan] = row.meal_id || null;
+        }
+      });
+
+      const latestByWeek = new Map<string, WeeklyPlanSnapshot>();
+      grouped.forEach((snapshot) => {
+        const existing = latestByWeek.get(snapshot.weekStart);
+        if (!existing || snapshot.savedAt > existing.savedAt) {
+          latestByWeek.set(snapshot.weekStart, snapshot);
+        }
+      });
+
+      return Array.from(latestByWeek.values()).sort((a, b) =>
+        b.weekStart.localeCompare(a.weekStart)
+      );
+    }),
+  saveWeeklyPlanHistory: (snapshot: WeeklyPlanSnapshot) =>
+    safe(async () => {
+      const { error: deleteError } = await supabase
+        .from('weekly_plan_history')
+        .delete()
+        .eq('week_start', snapshot.weekStart);
+      if (deleteError) throw deleteError;
+
+      const rows = Object.keys(snapshot.days).map((day) => ({
+        week_start: snapshot.weekStart,
+        day,
+        meal_id: snapshot.days[day as keyof WeeklyPlan] ?? null,
+        saved_at: snapshot.savedAt
+      }));
+      const { error } = await supabase.from('weekly_plan_history').insert(rows);
+      if (error) throw error;
+      return snapshot;
+    }),
+  generateGroceryList: (ingredients: Ingredient[], weekStart?: string) =>
+    safe(async () => {
+      const targetWeek = weekStart ?? getWeekStartKey(new Date());
+      const { data: existing, error } = await supabase
+        .from('grocery_items')
+        .select('*')
+        .eq('week_start', targetWeek);
+      if (error) throw error;
+
+      const map = new Map<string, any>();
+      (existing ?? []).forEach((row) => {
+        const key = `${normalizeName(row.name)}|${row.unit ?? ''}`;
+        map.set(key, row);
+      });
+
+      const updates: Array<{ id: string; quantity: number }> = [];
+      const inserts: Array<any> = [];
+      const now = new Date().toISOString();
+
+      ingredients.forEach((ingredient) => {
+        const key = `${normalizeName(ingredient.ingredient)}|${ingredient.unit ?? ''}`;
+        const match = map.get(key);
+        if (match) {
+          updates.push({
+            id: match.id,
+            quantity: Number(match.quantity) + ingredient.quantity
+          });
+        } else {
+          inserts.push({
+            id: generateId(),
+            name: ingredient.ingredient,
+            quantity: ingredient.quantity,
+            unit: ingredient.unit ?? null,
+            category: 'pantry',
+            checked: false,
+            week_start: targetWeek,
+            updated_at: now
+          });
+        }
+      });
+
+      for (const update of updates) {
+        const { error: updateError } = await supabase
+          .from('grocery_items')
+          .update({ quantity: update.quantity, checked: false, updated_at: now })
+          .eq('id', update.id);
+        if (updateError) throw updateError;
+      }
+
+      if (inserts.length) {
+        const { error: insertError } = await supabase
+          .from('grocery_items')
+          .insert(inserts);
+        if (insertError) throw insertError;
+      }
+
+      return { ok: true, added: inserts.length };
     })
 };
