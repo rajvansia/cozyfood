@@ -163,7 +163,7 @@ export const useAppState = () => {
 
   const toggleGroceryItem = useCallback(
     (id: string) => {
-      let nextChecked: boolean | null = null;
+      let nextChecked: boolean | undefined = undefined;
       setGroceryItems((prev) =>
         prev.map((item) => {
           if (item.id !== id) return item;
@@ -175,7 +175,7 @@ export const useAppState = () => {
           };
         })
       );
-      if (nextChecked !== null) {
+      if (nextChecked !== undefined) {
         void syncCall(() => api.updateGroceryItem(id, { checked: nextChecked }));
       }
     },

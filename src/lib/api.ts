@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { GroceryItem, Ingredient, Meal, WeeklyPlan, WeeklyPlanSnapshot } from './types';
 import { generateId, getWeekStartKey, normalizeName } from './utils';
 
@@ -40,10 +41,12 @@ const mapIngredientRow = (row: any): Ingredient => ({
   unit: row.unit ?? undefined
 });
 
-const safe = async <T>(fn: () => Promise<T>): Promise<T | null> => {
+const safe = async <T>(
+  fn: (client: SupabaseClient) => Promise<T>
+): Promise<T | null> => {
   if (!supabase) return null;
   try {
-    return await fn();
+    return await fn(supabase);
   } catch {
     return null;
   }
@@ -52,8 +55,8 @@ const safe = async <T>(fn: () => Promise<T>): Promise<T | null> => {
 export const api = {
   isConfigured,
   getGroceryItems: () =>
-    safe(async () => {
-  const { data, error } = await supabase
+    safe(async (client) => {
+      const { data, error } = await client
         .from('grocery_items')
         .select('*')
         .order('updated_at', { ascending: false });
@@ -61,8 +64,8 @@ export const api = {
       return (data ?? []).map(mapGroceryRow);
     }),
   createGroceryItem: (item: GroceryItem) =>
-    safe(async () => {
-      const { data, error } = await supabase
+    safe(async (client) => {
+      const { data, error } = await client
         .from('grocery_items')
         .insert(mapGroceryToRow(item))
         .select('*')
@@ -71,7 +74,7 @@ export const api = {
       return mapGroceryRow(data);
     }),
   updateGroceryItem: (id: string, item: Partial<GroceryItem>) =>
-    safe(async () => {
+    safe(async (client) => {
       const payload: any = { ...item };
       if (payload.weekStart) {
         payload.week_start = payload.weekStart;
@@ -81,7 +84,7 @@ export const api = {
         payload.updated_at = payload.updatedAt;
         delete payload.updatedAt;
       }
-      const { data, error } = await supabase
+      const { data, error } = await client
         .from('grocery_items')
         .update(payload)
         .eq('id', id)
@@ -91,20 +94,20 @@ export const api = {
       return mapGroceryRow(data);
     }),
   deleteGroceryItem: (id: string) =>
-    safe(async () => {
-      const { error } = await supabase.from('grocery_items').delete().eq('id', id);
+    safe(async (client) => {
+      const { error } = await client.from('grocery_items').delete().eq('id', id);
       if (error) throw error;
       return { ok: true };
     }),
   getMeals: () =>
-    safe(async () => {
-      const { data: mealsData, error: mealsError } = await supabase
+    safe(async (client) => {
+      const { data: mealsData, error: mealsError } = await client
         .from('meals')
         .select('*')
         .order('meal_name');
       if (mealsError) throw mealsError;
 
-      const { data: ingredientData, error: ingredientError } = await supabase
+      const { data: ingredientData, error: ingredientError } = await client
         .from('meal_ingredients')
         .select('*');
       if (ingredientError) throw ingredientError;
@@ -124,8 +127,8 @@ export const api = {
       return Array.from(mealMap.values());
     }),
   createMeal: (meal: Meal) =>
-    safe(async () => {
-      const { error: mealError } = await supabase.from('meals').insert({
+    safe(async (client) => {
+      const { error: mealError } = await client.from('meals').insert({
         id: meal.id,
         meal_name: meal.mealName,
         notes: meal.notes ?? null
@@ -133,7 +136,7 @@ export const api = {
       if (mealError) throw mealError;
 
       if (meal.ingredients.length) {
-        const { error: ingredientsError } = await supabase.from('meal_ingredients').insert(
+        const { error: ingredientsError } = await client.from('meal_ingredients').insert(
           meal.ingredients.map((ingredient) => ({
             id: ingredient.id || generateId(),
             meal_id: meal.id,
@@ -148,21 +151,21 @@ export const api = {
       return meal;
     }),
   updateMeal: (id: string, meal: Meal) =>
-    safe(async () => {
-      const { error: mealError } = await supabase
+    safe(async (client) => {
+      const { error: mealError } = await client
         .from('meals')
         .update({ meal_name: meal.mealName, notes: meal.notes ?? null })
         .eq('id', id);
       if (mealError) throw mealError;
 
-      const { error: deleteError } = await supabase
+      const { error: deleteError } = await client
         .from('meal_ingredients')
         .delete()
         .eq('meal_id', id);
       if (deleteError) throw deleteError;
 
       if (meal.ingredients.length) {
-        const { error: ingredientsError } = await supabase.from('meal_ingredients').insert(
+        const { error: ingredientsError } = await client.from('meal_ingredients').insert(
           meal.ingredients.map((ingredient) => ({
             id: ingredient.id || generateId(),
             meal_id: id,
@@ -177,20 +180,20 @@ export const api = {
       return meal;
     }),
   deleteMeal: (id: string) =>
-    safe(async () => {
-      const { error: deleteIngredientsError } = await supabase
+    safe(async (client) => {
+      const { error: deleteIngredientsError } = await client
         .from('meal_ingredients')
         .delete()
         .eq('meal_id', id);
       if (deleteIngredientsError) throw deleteIngredientsError;
 
-      const { error } = await supabase.from('meals').delete().eq('id', id);
+      const { error } = await client.from('meals').delete().eq('id', id);
       if (error) throw error;
       return { ok: true };
     }),
   getWeeklyPlan: () =>
-    safe(async () => {
-      const { data, error } = await supabase.from('weekly_plan').select('*');
+    safe(async (client) => {
+      const { data, error } = await client.from('weekly_plan').select('*');
       if (error) throw error;
       const plan: WeeklyPlan = {
         mon: null,
@@ -209,21 +212,21 @@ export const api = {
       return plan;
     }),
   updateWeeklyPlan: (plan: WeeklyPlan) =>
-    safe(async () => {
+    safe(async (client) => {
       const payload = Object.keys(plan).map((day) => ({
         day,
         meal_id: plan[day as keyof WeeklyPlan] ?? null,
         updated_at: new Date().toISOString()
       }));
-      const { error } = await supabase
+      const { error } = await client
         .from('weekly_plan')
         .upsert(payload, { onConflict: 'day' });
       if (error) throw error;
       return plan;
     }),
   getWeeklyPlanHistory: () =>
-    safe(async () => {
-      const { data, error } = await supabase
+    safe(async (client) => {
+      const { data, error } = await client
         .from('weekly_plan_history')
         .select('*')
         .order('week_start', { ascending: false });
@@ -266,8 +269,8 @@ export const api = {
       );
     }),
   saveWeeklyPlanHistory: (snapshot: WeeklyPlanSnapshot) =>
-    safe(async () => {
-      const { error: deleteError } = await supabase
+    safe(async (client) => {
+      const { error: deleteError } = await client
         .from('weekly_plan_history')
         .delete()
         .eq('week_start', snapshot.weekStart);
@@ -279,14 +282,14 @@ export const api = {
         meal_id: snapshot.days[day as keyof WeeklyPlan] ?? null,
         saved_at: snapshot.savedAt
       }));
-      const { error } = await supabase.from('weekly_plan_history').insert(rows);
+      const { error } = await client.from('weekly_plan_history').insert(rows);
       if (error) throw error;
       return snapshot;
     }),
   generateGroceryList: (ingredients: Ingredient[], weekStart?: string) =>
-    safe(async () => {
+    safe(async (client) => {
       const targetWeek = weekStart ?? getWeekStartKey(new Date());
-      const { data: existing, error } = await supabase
+      const { data: existing, error } = await client
         .from('grocery_items')
         .select('*')
         .eq('week_start', targetWeek);
@@ -325,7 +328,7 @@ export const api = {
       });
 
       for (const update of updates) {
-        const { error: updateError } = await supabase
+        const { error: updateError } = await client
           .from('grocery_items')
           .update({ quantity: update.quantity, checked: false, updated_at: now })
           .eq('id', update.id);
@@ -333,7 +336,7 @@ export const api = {
       }
 
       if (inserts.length) {
-        const { error: insertError } = await supabase
+        const { error: insertError } = await client
           .from('grocery_items')
           .insert(inserts);
         if (insertError) throw insertError;

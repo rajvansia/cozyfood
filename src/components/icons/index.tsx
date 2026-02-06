@@ -1,6 +1,6 @@
 import { SVGProps } from 'react';
 
-const baseProps = {
+const baseProps: SVGProps<SVGSVGElement> = {
   fill: 'none',
   stroke: 'currentColor',
   strokeWidth: 2,
