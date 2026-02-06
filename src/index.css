@@ -1,0 +1,33 @@
+@import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700&family=Nunito:wght@400;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  font-family: 'Nunito', ui-sans-serif, system-ui;
+  background: radial-gradient(circle at top, #F9F6F0 0%, #F6F1E7 35%, #EFE6D5 100%);
+  min-height: 100vh;
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+input::placeholder {
+  color: rgba(60, 58, 53, 0.5);
+}
+
+.cozy-scrollbar::-webkit-scrollbar {
+  height: 8px;
+  width: 8px;
+}
+
+.cozy-scrollbar::-webkit-scrollbar-thumb {
+  background: #BFD3B2;
+  border-radius: 999px;
+}
