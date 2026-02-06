@@ -17,8 +17,6 @@ const App = () => {
         {activeTab === 'grocery' && (
           <GroceryPage
             groceryItems={appState.groceryItems}
-            meals={appState.meals}
-            weeklyPlan={appState.weeklyPlan}
             weeklyHistory={appState.weeklyHistory}
             onAdd={appState.addGroceryItem}
             onUpdate={appState.updateGroceryItem}

@@ -8,13 +8,12 @@ import { Checkbox } from '../components/ui/Checkbox';
 import { EditIcon, PlusIcon, TrashIcon } from '../components/icons';
 import {
   CATEGORY_LABELS,
-  aggregateIngredientsFromPlan,
   formatQuantity,
   formatWeekLabel,
   getWeekStartKey,
   sortGroceryItems
 } from '../lib/utils';
-import { Category, GroceryItem, Meal, WeeklyPlan, WeeklyPlanSnapshot } from '../lib/types';
+import { Category, GroceryItem, WeeklyPlanSnapshot } from '../lib/types';
 
 const categoryOptions: Category[] = [
   'produce',
@@ -29,8 +28,6 @@ const categoryOptions: Category[] = [
 
 type GroceryPageProps = {
   groceryItems: GroceryItem[];
-  meals: Meal[];
-  weeklyPlan: WeeklyPlan;
   weeklyHistory: WeeklyPlanSnapshot[];
   onAdd: (item: Omit<GroceryItem, 'id' | 'updatedAt'>) => void;
   onUpdate: (id: string, update: Partial<GroceryItem>) => void;
@@ -54,8 +51,6 @@ const defaultForm: GroceryFormState = {
 
 export const GroceryPage = ({
   groceryItems,
-  meals,
-  weeklyPlan,
   weeklyHistory,
   onAdd,
   onUpdate,
@@ -91,16 +86,7 @@ export const GroceryPage = ({
     return options;
   }, [currentWeekStart, weeklyHistory]);
 
-  const selectedPlan = useMemo(() => {
-    if (selectedWeek === 'current') return weeklyPlan;
-    const snapshot = weeklyHistory.find((entry) => entry.weekStart === selectedWeek);
-    return snapshot ? snapshot.days : weeklyPlan;
-  }, [selectedWeek, weeklyHistory, weeklyPlan]);
 
-  const weekIngredients = useMemo(() => {
-    const list = aggregateIngredientsFromPlan(meals, selectedPlan);
-    return list.sort((a, b) => a.ingredient.localeCompare(b.ingredient));
-  }, [meals, selectedPlan]);
 
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();
@@ -144,54 +130,23 @@ export const GroceryPage = ({
       <Card className="animate-fadeIn">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h2 className="font-display text-xl text-ink">Week Ingredients</h2>
-            <p className="text-sm text-ink/70">
-              Pick a week to preview its planned ingredients.
-            </p>
-          </div>
-          <Select
-            value={selectedWeek}
-            onChange={(event) => setSelectedWeek(event.target.value)}
-            className="max-w-[240px]"
-          >
-            {weekOptions.map((option) => (
-              <option key={option.id} value={option.id}>
-                {option.label}
-              </option>
-            ))}
-          </Select>
-        </div>
-
-        <div className="mt-4 space-y-3">
-          {weekIngredients.length === 0 && (
-            <div className="rounded-cozy border border-cream/70 bg-cream p-4 text-center text-sm text-ink/70">
-              No ingredients planned for this week yet.
-            </div>
-          )}
-          {weekIngredients.map((ingredient) => (
-            <div
-              key={`${ingredient.ingredient}-${ingredient.unit ?? ''}`}
-              className="flex items-center justify-between rounded-cozy border border-cream/70 bg-cream px-4 py-3"
-            >
-              <div>
-                <p className="font-semibold text-ink">{ingredient.ingredient}</p>
-                <p className="text-sm text-ink/70">
-                  {formatQuantity(ingredient.quantity)} {ingredient.unit ?? ''}
-                </p>
-              </div>
-              <Badge>Planned</Badge>
-            </div>
-          ))}
-        </div>
-      </Card>
-
-      <Card className="animate-fadeIn">
-        <div className="flex items-center justify-between">
-          <div>
             <h2 className="font-display text-xl text-ink">Grocery List</h2>
             <p className="text-sm text-ink/70">Tap to check items off your basket.</p>
           </div>
-          <Badge>Week of {formatWeekLabel(selectedWeekStart)}</Badge>
+          <div className="flex flex-wrap items-center gap-3">
+            <Badge>Week of {formatWeekLabel(selectedWeekStart)}</Badge>
+            <Select
+              value={selectedWeek}
+              onChange={(event) => setSelectedWeek(event.target.value)}
+              className="max-w-[240px]"
+            >
+              {weekOptions.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.label}
+                </option>
+              ))}
+            </Select>
+          </div>
         </div>
         <form className="mt-4 space-y-3" onSubmit={handleSubmit}>
           <div className="grid gap-3 sm:grid-cols-2">
