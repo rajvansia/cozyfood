@@ -16,9 +16,11 @@ Create a `.env` file (or set env vars in your host):
 ```bash
 VITE_SUPABASE_URL="https://your-project.supabase.co"
 VITE_SUPABASE_PUBLISHABLE_DEFAULT_KEY="your-supabase-publishable-key"
+VITE_APP_PIN="1234"
 ```
 
 - `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_DEFAULT_KEY` configure the Supabase client.
+- `VITE_APP_PIN` (optional) enables a lightweight UI PIN gate. This is a client-side check, not a secure auth layer.
 
 ## PWA Notes
 

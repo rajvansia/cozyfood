@@ -5,10 +5,18 @@ import { GroceryPage } from './pages/GroceryPage';
 import { MealsPage } from './pages/MealsPage';
 import { WeekPlannerPage } from './pages/WeekPlannerPage';
 import { useAppState } from './lib/useAppState';
+import { PinGate, isPinUnlocked } from './components/PinGate';
 
 const App = () => {
   const [activeTab, setActiveTab] = useState<TabKey>('grocery');
   const appState = useAppState();
+  const pin = (import.meta.env.VITE_APP_PIN as string | undefined)?.trim();
+  const pinEnabled = Boolean(pin);
+  const [unlocked, setUnlocked] = useState(() => !pinEnabled || isPinUnlocked());
+
+  if (pinEnabled && !unlocked && pin) {
+    return <PinGate pin={pin} onUnlock={() => setUnlocked(true)} />;
+  }
 
   return (
     <div className="min-h-screen pb-24">
