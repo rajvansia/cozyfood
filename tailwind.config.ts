@@ -34,6 +34,11 @@ export default {
           '0%, 100%': { transform: 'translateY(0)' },
           '50%': { transform: 'translateY(-3px)' }
         },
+        pulseOnce: {
+          '0%': { transform: 'scale(1)', boxShadow: '0 0 0 0 rgba(143, 191, 133, 0.35)' },
+          '60%': { transform: 'scale(1.01)', boxShadow: '0 0 0 8px rgba(143, 191, 133, 0)' },
+          '100%': { transform: 'scale(1)', boxShadow: '0 0 0 0 rgba(143, 191, 133, 0)' }
+        },
         fadeIn: {
           '0%': { opacity: '0', transform: 'translateY(6px)' },
           '100%': { opacity: '1', transform: 'translateY(0)' }
@@ -41,6 +46,7 @@ export default {
       },
       animation: {
         breathe: 'breathe 3.5s ease-in-out infinite',
+        pulseOnce: 'pulseOnce 450ms ease-out',
         fadeIn: 'fadeIn 0.45s ease-out both'
       }
     }

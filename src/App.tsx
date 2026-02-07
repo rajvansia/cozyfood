@@ -25,6 +25,7 @@ const App = () => {
         {activeTab === 'grocery' && (
           <GroceryPage
             groceryItems={appState.groceryItems}
+            meals={appState.meals}
             weeklyHistory={appState.weeklyHistory}
             onAdd={appState.addGroceryItem}
             onUpdate={appState.updateGroceryItem}
@@ -45,6 +46,8 @@ const App = () => {
             meals={appState.meals}
             weeklyPlan={appState.weeklyPlan}
             weeklyHistory={appState.weeklyHistory}
+            selectedWeekStart={appState.plannerWeekStart}
+            onWeekChange={appState.setPlannerWeekStart}
             onPlanChange={appState.updateWeeklyPlan}
             onGenerate={appState.generateGroceryList}
             onLoadHistory={appState.loadWeeklySnapshot}

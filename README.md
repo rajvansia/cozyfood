@@ -51,11 +51,13 @@ Create tables with the following columns (snake_case recommended):
 - `grocery_items`: `id (uuid)`, `name (text)`, `quantity (numeric)`, `unit (text)`, `category (text)`, `checked (bool)`, `week_start (date)`, `updated_at (timestamptz)`
 - `meals`: `id (uuid)`, `meal_name (text)`, `notes (text)`
 - `meal_ingredients`: `id (uuid)`, `meal_id (uuid)`, `ingredient (text)`, `quantity (numeric)`, `unit (text)`
-- `weekly_plan`: `day (text, pk)`, `meal_id (uuid)`, `updated_at (timestamptz)`
-- `weekly_plan_history`: `week_start (date)`, `day (text)`, `meal_id (uuid)`, `saved_at (timestamptz)`
+- `weekly_plan`: `week_start (date)`, `day (text)`, `meal_ids (uuid[])`, `updated_at (timestamptz)`
 
 Recommended indexes:
 - Unique index on `grocery_items (week_start, name, unit)` for clean merges.
+- Unique index on `weekly_plan (week_start, day)` for upserts.
+
+Note: The app deletes existing `weekly_plan` rows for a given week before inserting updates, but a unique constraint is still recommended.
 
 RLS:
 - For quick setup, disable RLS or add policies that allow your users to read/write these tables.

@@ -35,12 +35,11 @@ export type Meal = {
 
 export type DayKey = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
 
-export type WeeklyPlan = Record<DayKey, string | null>;
+export type WeeklyPlan = Record<DayKey, string[]>;
 
 export type SyncStatus = 'idle' | 'syncing' | 'offline' | 'error';
 
-export type WeeklyPlanSnapshot = {
+export type WeeklyPlanByWeek = {
   weekStart: string;
-  savedAt: string;
   days: WeeklyPlan;
 };

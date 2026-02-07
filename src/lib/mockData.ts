@@ -1,4 +1,4 @@
-import { GroceryItem, Meal, WeeklyPlan, WeeklyPlanSnapshot } from './types';
+import { GroceryItem, Meal, WeeklyPlan } from './types';
 import { getWeekStartKey } from './utils';
 
 const currentWeekStart = getWeekStartKey(new Date());
@@ -70,19 +70,11 @@ export const mockMeals: Meal[] = [
 ];
 
 export const mockPlan: WeeklyPlan = {
-  mon: 'm-1',
-  tue: 'm-2',
-  wed: null,
-  thu: 'm-3',
-  fri: null,
-  sat: null,
-  sun: null
+  mon: ['m-1'],
+  tue: ['m-2'],
+  wed: [],
+  thu: ['m-3'],
+  fri: [],
+  sat: [],
+  sun: []
 };
-
-export const mockHistory: WeeklyPlanSnapshot[] = [
-  {
-    weekStart: '2026-02-02',
-    savedAt: new Date().toISOString(),
-    days: mockPlan
-  }
-];

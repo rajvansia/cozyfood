@@ -4,11 +4,12 @@ import { Select } from '../components/ui/Select';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
 import { SparkleIcon } from '../components/icons';
-import { DayKey, Meal, WeeklyPlan, WeeklyPlanSnapshot } from '../lib/types';
+import { DayKey, Meal, WeeklyPlan, WeeklyPlanByWeek } from '../lib/types';
 import {
   FULL_DAY_LABELS,
   aggregateIngredientsFromPlan,
-  formatWeekLabel
+  formatWeekLabel,
+  getWeekStartByOffset
 } from '../lib/utils';
 
 const days: DayKey[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
@@ -16,16 +17,20 @@ const days: DayKey[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 type WeekPlannerPageProps = {
   meals: Meal[];
   weeklyPlan: WeeklyPlan;
-  weeklyHistory: WeeklyPlanSnapshot[];
-  onPlanChange: (day: DayKey, mealId: string | null) => void;
+  weeklyHistory: WeeklyPlanByWeek[];
+  selectedWeekStart: string;
+  onWeekChange: (weekStart: string) => void;
+  onPlanChange: (day: DayKey, mealIds: string[]) => void;
   onGenerate: () => void;
-  onLoadHistory: (snapshot: WeeklyPlanSnapshot) => void;
+  onLoadHistory: (snapshot: WeeklyPlanByWeek) => void;
 };
 
 export const WeekPlannerPage = ({
   meals,
   weeklyPlan,
   weeklyHistory,
+  selectedWeekStart,
+  onWeekChange,
   onPlanChange,
   onGenerate,
   onLoadHistory
@@ -40,6 +45,37 @@ export const WeekPlannerPage = ({
     return new Map(meals.map((meal) => [meal.id, meal.mealName]));
   }, [meals]);
 
+  const weekOptions = useMemo(() => {
+    const options = Array.from({ length: 6 }, (_, index) => {
+      const weekStart = getWeekStartByOffset(index);
+      return {
+        weekStart,
+        label: index === 0 ? `This week (${formatWeekLabel(weekStart)})` : `Week of ${formatWeekLabel(weekStart)}`
+      };
+    });
+    if (!options.find((option) => option.weekStart === selectedWeekStart)) {
+      options.unshift({
+        weekStart: selectedWeekStart,
+        label: `Week of ${formatWeekLabel(selectedWeekStart)}`
+      });
+    }
+    return options;
+  }, [selectedWeekStart]);
+
+  const addMealToDay = (day: DayKey, mealId: string) => {
+    if (!mealId) return;
+    const existing = weeklyPlan[day];
+    if (existing.includes(mealId)) return;
+    onPlanChange(day, [...existing, mealId]);
+  };
+
+  const removeMealFromDay = (day: DayKey, mealId: string) => {
+    onPlanChange(
+      day,
+      weeklyPlan[day].filter((id) => id !== mealId)
+    );
+  };
+
   const handleGenerate = () => {
     onGenerate();
     setCelebrate(true);
@@ -49,31 +85,61 @@ export const WeekPlannerPage = ({
   return (
     <section className="space-y-6">
       <Card className="animate-fadeIn">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 className="font-display text-xl text-ink">Weekly Planner</h2>
             <p className="text-sm text-ink/70">Assign meals, then grow your grocery list.</p>
           </div>
-          <Badge>{ingredientCount} ingredients</Badge>
+          <div className="flex flex-wrap items-center gap-3">
+            <Badge>{ingredientCount} ingredients</Badge>
+            <Select value={selectedWeekStart} onChange={(event) => onWeekChange(event.target.value)}>
+              {weekOptions.map((option) => (
+                <option key={option.weekStart} value={option.weekStart}>
+                  {option.label}
+                </option>
+              ))}
+            </Select>
+          </div>
         </div>
 
-        <div className="mt-4 space-y-3">
+        <div className="mt-4 space-y-4">
           {days.map((day) => (
-            <div key={day} className="flex flex-col gap-2 sm:flex-row sm:items-center">
-              <span className="w-24 text-sm font-semibold text-ink/80">{FULL_DAY_LABELS[day]}</span>
-              <Select
-                value={weeklyPlan[day] ?? ''}
-                onChange={(event) =>
-                  onPlanChange(day, event.target.value ? event.target.value : null)
-                }
-              >
-                <option value="">No meal</option>
-                {meals.map((meal) => (
-                  <option key={meal.id} value={meal.id}>
-                    {meal.mealName}
-                  </option>
+            <div key={day} className="rounded-cozy border border-cream/70 bg-cream p-3">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <span className="text-sm font-semibold text-ink/80">
+                  {FULL_DAY_LABELS[day]}
+                </span>
+                <Select
+                  value=""
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    if (value) addMealToDay(day, value);
+                  }}
+                >
+                  <option value="">Add a meal…</option>
+                  {meals.map((meal) => (
+                    <option key={meal.id} value={meal.id}>
+                      {meal.mealName}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {weeklyPlan[day].length === 0 && (
+                  <span className="text-xs text-ink/60">No meals planned</span>
+                )}
+                {weeklyPlan[day].map((mealId) => (
+                  <button
+                    key={`${day}-${mealId}`}
+                    type="button"
+                    className="flex items-center gap-2 rounded-full bg-fog px-3 py-1 text-xs font-semibold text-ink/70"
+                    onClick={() => removeMealFromDay(day, mealId)}
+                  >
+                    {mealMap.get(mealId) ?? 'Meal'}
+                    <span className="text-ink/40">×</span>
+                  </button>
                 ))}
-              </Select>
+              </div>
             </div>
           ))}
         </div>
@@ -99,17 +165,21 @@ export const WeekPlannerPage = ({
         </p>
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           {days.map((day) => {
-            const meal = meals.find((entry) => entry.id === weeklyPlan[day]);
+            const mealsForDay = weeklyPlan[day]
+              .map((id) => meals.find((entry) => entry.id === id))
+              .filter((meal): meal is Meal => Boolean(meal));
             return (
               <div key={day} className="rounded-cozy border border-cream/70 bg-cream p-3">
                 <p className="text-sm font-semibold text-ink/80">{FULL_DAY_LABELS[day]}</p>
-                <p className="font-semibold text-ink">
-                  {meal ? meal.mealName : 'Free evening'}
-                </p>
-                {meal && (
-                  <p className="text-xs text-ink/60">
-                    {meal.ingredients.length} ingredients
-                  </p>
+                {mealsForDay.length === 0 && (
+                  <p className="font-semibold text-ink">Free evening</p>
+                )}
+                {mealsForDay.length > 0 && (
+                  <div className="mt-1 flex flex-wrap gap-2">
+                    {mealsForDay.map((meal) => (
+                      <Badge key={meal.id}>{meal.mealName}</Badge>
+                    ))}
+                  </div>
                 )}
               </div>
             );
@@ -125,7 +195,7 @@ export const WeekPlannerPage = ({
               Revisit past weeks and reload a plan anytime.
             </p>
           </div>
-          <Badge>{weeklyHistory.length} saved</Badge>
+          <Badge>{weeklyHistory.length} weeks</Badge>
         </div>
 
         <div className="mt-4 space-y-3">
@@ -144,10 +214,8 @@ export const WeekPlannerPage = ({
                   <p className="text-sm font-semibold text-ink/70">
                     Week of {formatWeekLabel(snapshot.weekStart)}
                   </p>
-                  <p className="text-xs text-ink/60">
-                    Saved {new Date(snapshot.savedAt).toLocaleDateString()}
-                  </p>
-                </div>
+                    <p className="text-xs text-ink/60">Stored in weekly plan</p>
+                  </div>
                 <Button
                   type="button"
                   variant="soft"
@@ -159,13 +227,18 @@ export const WeekPlannerPage = ({
               </div>
               <div className="mt-3 grid gap-2 sm:grid-cols-2">
                 {days.map((day) => {
-                  const mealId = snapshot.days[day];
+                  const mealIds = snapshot.days[day] ?? [];
+                  const label = mealIds.length
+                    ? mealIds
+                        .map((id) => mealMap.get(id) ?? 'Meal')
+                        .join(', ')
+                    : 'Off';
                   return (
                     <div
                       key={`${snapshot.weekStart}-${day}`}
                       className="rounded-full bg-fog px-3 py-2 text-xs font-semibold text-ink/70"
                     >
-                      {FULL_DAY_LABELS[day]} · {mealId ? mealMap.get(mealId) ?? 'Meal' : 'Off'}
+                      {FULL_DAY_LABELS[day]} · {label}
                     </div>
                   );
                 })}

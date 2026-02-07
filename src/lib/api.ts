@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { GroceryItem, Ingredient, Meal, WeeklyPlan, WeeklyPlanSnapshot } from './types';
+import { GroceryItem, Ingredient, Meal, WeeklyPlan, WeeklyPlanByWeek } from './types';
 import { generateId, getWeekStartKey, normalizeName } from './utils';
 
 const isConfigured = Boolean(supabase);
@@ -65,6 +65,34 @@ export const api = {
     }),
   createGroceryItem: (item: GroceryItem) =>
     safe(async (client) => {
+      const unit = item.unit ?? '';
+      const { data: existingRows, error: existingError } = await client
+        .from('grocery_items')
+        .select('*')
+        .eq('week_start', item.weekStart);
+      if (existingError) throw existingError;
+
+      const match = (existingRows ?? []).find(
+        (row) =>
+          normalizeName(row.name) === normalizeName(item.name) &&
+          (row.unit ?? '') === unit
+      );
+
+      if (match) {
+        const { data: updated, error: updateError } = await client
+          .from('grocery_items')
+          .update({
+            quantity: Number(match.quantity) + item.quantity,
+            checked: false,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', match.id)
+          .select('*')
+          .single();
+        if (updateError) throw updateError;
+        return mapGroceryRow(updated);
+      }
+
       const { data, error } = await client
         .from('grocery_items')
         .insert(mapGroceryToRow(item))
@@ -191,100 +219,85 @@ export const api = {
       if (error) throw error;
       return { ok: true };
     }),
-  getWeeklyPlan: () =>
+  getWeeklyPlan: (weekStart: string) =>
     safe(async (client) => {
-      const { data, error } = await client.from('weekly_plan').select('*');
+      const { data, error } = await client
+        .from('weekly_plan')
+        .select('*')
+        .eq('week_start', weekStart);
       if (error) throw error;
       const plan: WeeklyPlan = {
-        mon: null,
-        tue: null,
-        wed: null,
-        thu: null,
-        fri: null,
-        sat: null,
-        sun: null
+        mon: [],
+        tue: [],
+        wed: [],
+        thu: [],
+        fri: [],
+        sat: [],
+        sun: []
       };
       (data ?? []).forEach((row) => {
         if (row.day && row.day in plan) {
-          plan[row.day as keyof WeeklyPlan] = row.meal_id || null;
+          plan[row.day as keyof WeeklyPlan] = Array.isArray(row.meal_ids)
+            ? row.meal_ids
+            : [];
         }
       });
       return plan;
     }),
-  updateWeeklyPlan: (plan: WeeklyPlan) =>
+  updateWeeklyPlan: (plan: WeeklyPlan, weekStart: string) =>
     safe(async (client) => {
       const payload = Object.keys(plan).map((day) => ({
         day,
-        meal_id: plan[day as keyof WeeklyPlan] ?? null,
+        meal_ids: plan[day as keyof WeeklyPlan] ?? [],
+        week_start: weekStart,
         updated_at: new Date().toISOString()
       }));
-      const { error } = await client
+      // Ensure a single row per (week_start, day) even if the DB lacks a unique constraint.
+      const { error: deleteError } = await client
         .from('weekly_plan')
-        .upsert(payload, { onConflict: 'day' });
+        .delete()
+        .eq('week_start', weekStart);
+      if (deleteError) throw deleteError;
+
+      const { error } = await client.from('weekly_plan').insert(payload);
       if (error) throw error;
       return plan;
     }),
-  getWeeklyPlanHistory: () =>
+  getWeeklyPlans: () =>
     safe(async (client) => {
       const { data, error } = await client
-        .from('weekly_plan_history')
+        .from('weekly_plan')
         .select('*')
         .order('week_start', { ascending: false });
       if (error) throw error;
 
-      const grouped = new Map<string, WeeklyPlanSnapshot>();
+      const grouped = new Map<string, WeeklyPlanByWeek>();
       (data ?? []).forEach((row) => {
-        const key = `${row.week_start}__${row.saved_at}`;
-        if (!grouped.has(key)) {
-          grouped.set(key, {
+        if (!grouped.has(row.week_start)) {
+          grouped.set(row.week_start, {
             weekStart: row.week_start,
-            savedAt: row.saved_at,
             days: {
-              mon: null,
-              tue: null,
-              wed: null,
-              thu: null,
-              fri: null,
-              sat: null,
-              sun: null
+              mon: [],
+              tue: [],
+              wed: [],
+              thu: [],
+              fri: [],
+              sat: [],
+              sun: []
             }
           });
         }
-        const snapshot = grouped.get(key);
-        if (snapshot && row.day) {
-          snapshot.days[row.day as keyof WeeklyPlan] = row.meal_id || null;
+        const week = grouped.get(row.week_start);
+        if (week && row.day) {
+          week.days[row.day as keyof WeeklyPlan] = Array.isArray(row.meal_ids)
+            ? row.meal_ids
+            : [];
         }
       });
 
-      const latestByWeek = new Map<string, WeeklyPlanSnapshot>();
-      grouped.forEach((snapshot) => {
-        const existing = latestByWeek.get(snapshot.weekStart);
-        if (!existing || snapshot.savedAt > existing.savedAt) {
-          latestByWeek.set(snapshot.weekStart, snapshot);
-        }
-      });
-
-      return Array.from(latestByWeek.values()).sort((a, b) =>
+      return Array.from(grouped.values()).sort((a, b) =>
         b.weekStart.localeCompare(a.weekStart)
       );
-    }),
-  saveWeeklyPlanHistory: (snapshot: WeeklyPlanSnapshot) =>
-    safe(async (client) => {
-      const { error: deleteError } = await client
-        .from('weekly_plan_history')
-        .delete()
-        .eq('week_start', snapshot.weekStart);
-      if (deleteError) throw deleteError;
-
-      const rows = Object.keys(snapshot.days).map((day) => ({
-        week_start: snapshot.weekStart,
-        day,
-        meal_id: snapshot.days[day as keyof WeeklyPlan] ?? null,
-        saved_at: snapshot.savedAt
-      }));
-      const { error } = await client.from('weekly_plan_history').insert(rows);
-      if (error) throw error;
-      return snapshot;
     }),
   generateGroceryList: (ingredients: Ingredient[], weekStart?: string) =>
     safe(async (client) => {

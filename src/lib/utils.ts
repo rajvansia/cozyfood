@@ -32,13 +32,13 @@ export const CATEGORY_LABELS: Record<string, string> = {
 };
 
 export const EMPTY_WEEKLY_PLAN: WeeklyPlan = {
-  mon: null,
-  tue: null,
-  wed: null,
-  thu: null,
-  fri: null,
-  sat: null,
-  sun: null
+  mon: [],
+  tue: [],
+  wed: [],
+  thu: [],
+  fri: [],
+  sat: [],
+  sun: []
 };
 
 export const generateId = () => {
@@ -50,10 +50,20 @@ export const generateId = () => {
 
 export const normalizeName = (name: string) => name.trim().toLowerCase();
 
-export const normalizeWeeklyPlan = (plan: Partial<WeeklyPlan>) => ({
-  ...EMPTY_WEEKLY_PLAN,
-  ...plan
-});
+export const normalizeWeeklyPlan = (plan: Partial<WeeklyPlan>) => {
+  const normalized: WeeklyPlan = { ...EMPTY_WEEKLY_PLAN };
+  (Object.keys(normalized) as Array<keyof WeeklyPlan>).forEach((day) => {
+    const value = plan[day];
+    if (Array.isArray(value)) {
+      normalized[day] = value.filter(Boolean);
+    } else if (typeof value === 'string' && value) {
+      normalized[day] = [value];
+    } else {
+      normalized[day] = [];
+    }
+  });
+  return normalized;
+};
 
 export const getWeekStartKey = (date: Date) => {
   const day = date.getDay();
@@ -75,6 +85,12 @@ export const formatWeekLabel = (weekStart: string) => {
     month: 'short',
     day: 'numeric'
   });
+};
+
+export const getWeekStartByOffset = (offsetWeeks: number, baseDate = new Date()) => {
+  const shifted = new Date(baseDate);
+  shifted.setDate(shifted.getDate() + offsetWeeks * 7);
+  return getWeekStartKey(shifted);
 };
 
 export const formatQuantity = (qty: number) => {
@@ -106,9 +122,12 @@ export const aggregateIngredientsFromPlan = (
 
   Object.values(plan).forEach((mealId) => {
     if (!mealId) return;
-    const meal = mealMap.get(mealId);
-    if (!meal) return;
-    aggregated.push(...meal.ingredients);
+    const mealIds = Array.isArray(mealId) ? mealId : [mealId];
+    mealIds.forEach((id) => {
+      const meal = mealMap.get(id);
+      if (!meal) return;
+      aggregated.push(...meal.ingredients);
+    });
   });
 
   return sumIngredients(aggregated);
