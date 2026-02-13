@@ -38,6 +38,7 @@ const App = () => {
         {activeTab === 'meals' && (
           <MealsPage
             meals={appState.meals}
+            syncingIds={appState.mealsSyncingIds}
             onAdd={appState.addMeal}
             onUpdate={appState.updateMeal}
             onDelete={appState.deleteMeal}

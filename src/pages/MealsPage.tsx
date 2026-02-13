@@ -16,12 +16,19 @@ const createIngredient = (): Ingredient => ({
 
 type MealsPageProps = {
   meals: Meal[];
+  syncingIds?: string[];
   onAdd: (meal: Omit<Meal, 'id'>) => void;
   onUpdate: (meal: Meal) => void;
   onDelete: (id: string) => void;
 };
 
-export const MealsPage = ({ meals, onAdd, onUpdate, onDelete }: MealsPageProps) => {
+export const MealsPage = ({
+  meals,
+  syncingIds = [],
+  onAdd,
+  onUpdate,
+  onDelete
+}: MealsPageProps) => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [mealName, setMealName] = useState('');
   const [notes, setNotes] = useState('');
@@ -183,7 +190,14 @@ export const MealsPage = ({ meals, onAdd, onUpdate, onDelete }: MealsPageProps) 
           <Card key={meal.id} className="space-y-3">
             <div className="flex items-start justify-between">
               <div>
-                <h3 className="font-semibold text-ink">{meal.mealName}</h3>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="font-semibold text-ink">{meal.mealName}</h3>
+                  {syncingIds.includes(meal.id) && (
+                    <Badge className="bg-sky/60 text-ink/70 animate-pulse">
+                      Syncing…
+                    </Badge>
+                  )}
+                </div>
                 {meal.notes && <p className="text-sm text-ink/70">{meal.notes}</p>}
               </div>
               <div className="flex items-center gap-2">

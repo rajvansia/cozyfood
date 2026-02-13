@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api';
 import { mockGroceryItems, mockMeals, mockPlan } from './mockData';
 import {
@@ -24,8 +24,13 @@ const STORAGE_KEYS = {
   plans: 'cozyfood.plans',
   plannerWeek: 'cozyfood.plannerWeek',
   history: 'cozyfood.history',
-  groceryWeek: 'cozyfood.groceryWeek'
+  groceryWeek: 'cozyfood.groceryWeek',
+  mealsTouched: 'cozyfood.mealsTouched',
+  mealsDeleted: 'cozyfood.mealsDeleted',
+  plansTouched: 'cozyfood.plansTouched'
 };
+
+const DAY_KEYS: Array<keyof WeeklyPlan> = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 
 const readStorage = <T,>(key: string, fallback: T): T => {
   if (typeof window === 'undefined') return fallback;
@@ -100,12 +105,61 @@ export const useAppState = () => {
     });
     return normalized;
   };
+  const areMealsEqual = useCallback((left: Meal, right: Meal) => {
+    if (left.mealName !== right.mealName) return false;
+    if ((left.notes ?? '') !== (right.notes ?? '')) return false;
+    if (left.ingredients.length !== right.ingredients.length) return false;
+    for (let index = 0; index < left.ingredients.length; index += 1) {
+      const a = left.ingredients[index];
+      const b = right.ingredients[index];
+      if (!b) return false;
+      if (a.ingredient !== b.ingredient) return false;
+      if (Number(a.quantity) !== Number(b.quantity)) return false;
+      if ((a.unit ?? '') !== (b.unit ?? '')) return false;
+    }
+    return true;
+  }, []);
+  const arePlansEqual = useCallback((left: WeeklyPlan, right: WeeklyPlan) => {
+    return DAY_KEYS.every((day) => {
+      const leftIds = left[day] ?? [];
+      const rightIds = right[day] ?? [];
+      if (leftIds.length !== rightIds.length) return false;
+      return leftIds.every((id, index) => id === rightIds[index]);
+    });
+  }, []);
+  const mergeWeeklyHistory = useCallback(
+    (localHistory: WeeklyPlanByWeek[], remoteHistory: WeeklyPlanByWeek[]) => {
+      const map = new Map<string, WeeklyPlanByWeek>();
+      remoteHistory.forEach((entry) => {
+        map.set(entry.weekStart, {
+          weekStart: entry.weekStart,
+          days: normalizeWeeklyPlan(entry.days)
+        });
+      });
+      localHistory.forEach((entry) => {
+        map.set(entry.weekStart, {
+          weekStart: entry.weekStart,
+          days: normalizeWeeklyPlan(entry.days)
+        });
+      });
+      return Array.from(map.values()).sort((a, b) =>
+        b.weekStart.localeCompare(a.weekStart)
+      );
+    },
+    []
+  );
 
   const [groceryItems, setGroceryItems] = useState<GroceryItem[]>(() =>
     normalizeGrocery(readStorage(STORAGE_KEYS.grocery, mockGroceryItems))
   );
   const [meals, setMeals] = useState<Meal[]>(() =>
     readStorage(STORAGE_KEYS.meals, mockMeals)
+  );
+  const [mealsTouched, setMealsTouched] = useState<Record<string, number>>(() =>
+    readStorage(STORAGE_KEYS.mealsTouched, {})
+  );
+  const [mealsDeleted, setMealsDeleted] = useState<Record<string, number>>(() =>
+    readStorage(STORAGE_KEYS.mealsDeleted, {})
   );
   const [plannerWeekStart, setPlannerWeekStart] = useState<string>(() =>
     readStorage(STORAGE_KEYS.plannerWeek, defaultWeekStart)
@@ -126,6 +180,13 @@ export const useAppState = () => {
   const [weeklyHistory, setWeeklyHistory] = useState<WeeklyPlanByWeek[]>(() =>
     normalizeHistory(readStorage(STORAGE_KEYS.history, []))
   );
+  const [plansTouched, setPlansTouched] = useState<Record<string, number>>(() =>
+    readStorage(STORAGE_KEYS.plansTouched, {})
+  );
+  const weeklyPlansRef = useRef(weeklyPlans);
+  const mealsTouchedRef = useRef(mealsTouched);
+  const mealsDeletedRef = useRef(mealsDeleted);
+  const plansTouchedRef = useRef(plansTouched);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle');
   const [isOnline, setIsOnline] = useState(
     typeof navigator !== 'undefined' ? navigator.onLine : true
@@ -151,6 +212,14 @@ export const useAppState = () => {
   }, [meals]);
 
   useEffect(() => {
+    writeStorage(STORAGE_KEYS.mealsTouched, mealsTouched);
+  }, [mealsTouched]);
+
+  useEffect(() => {
+    writeStorage(STORAGE_KEYS.mealsDeleted, mealsDeleted);
+  }, [mealsDeleted]);
+
+  useEffect(() => {
     writeStorage(STORAGE_KEYS.plans, weeklyPlans);
   }, [weeklyPlans]);
 
@@ -167,6 +236,33 @@ export const useAppState = () => {
   }, [weeklyHistory]);
 
   useEffect(() => {
+    writeStorage(STORAGE_KEYS.plansTouched, plansTouched);
+  }, [plansTouched]);
+
+  useEffect(() => {
+    weeklyPlansRef.current = weeklyPlans;
+  }, [weeklyPlans]);
+
+  useEffect(() => {
+    mealsTouchedRef.current = mealsTouched;
+  }, [mealsTouched]);
+
+  useEffect(() => {
+    mealsDeletedRef.current = mealsDeleted;
+  }, [mealsDeleted]);
+
+  useEffect(() => {
+    plansTouchedRef.current = plansTouched;
+  }, [plansTouched]);
+
+  const mealsSyncingIds = useMemo(() => {
+    const ids = new Set<string>();
+    Object.keys(mealsTouched).forEach((id) => ids.add(id));
+    Object.keys(mealsDeleted).forEach((id) => ids.add(id));
+    return Array.from(ids);
+  }, [mealsTouched, mealsDeleted]);
+
+  useEffect(() => {
     if (!api.isConfigured || !isOnline) {
       setSyncStatus('offline');
       return;
@@ -179,8 +275,71 @@ export const useAppState = () => {
         api.getWeeklyPlans()
       ]);
 
-      if (remoteMeals) setMeals(remoteMeals);
-      if (remoteHistory) setWeeklyHistory(normalizeHistory(remoteHistory));
+      if (remoteMeals) {
+        const touched = mealsTouchedRef.current;
+        const deleted = mealsDeletedRef.current;
+        const hasLocalChanges =
+          Object.keys(touched).length > 0 || Object.keys(deleted).length > 0;
+
+        if (!hasLocalChanges) {
+          setMeals(remoteMeals);
+        } else {
+          setMeals((prev) => {
+            const remoteMap = new Map(remoteMeals.map((meal) => [meal.id, meal]));
+            const localMap = new Map(prev.map((meal) => [meal.id, meal]));
+            const merged: Meal[] = [];
+
+            prev.forEach((localMeal) => {
+              if (deleted[localMeal.id]) return;
+              const remote = remoteMap.get(localMeal.id);
+              if (remote && !touched[localMeal.id]) {
+                merged.push(remote);
+              } else {
+                merged.push(localMeal);
+              }
+            });
+
+            remoteMeals.forEach((remoteMeal) => {
+              if (deleted[remoteMeal.id]) return;
+              if (!localMap.has(remoteMeal.id)) merged.push(remoteMeal);
+            });
+
+            const nextTouched: Record<string, number> = { ...touched };
+            remoteMeals.forEach((remoteMeal) => {
+              const localMeal = localMap.get(remoteMeal.id);
+              if (!localMeal) return;
+              if (!touched[remoteMeal.id]) return;
+              if (areMealsEqual(localMeal, remoteMeal)) {
+                delete nextTouched[remoteMeal.id];
+              }
+            });
+            if (Object.keys(nextTouched).length !== Object.keys(touched).length) {
+              setMealsTouched(nextTouched);
+            }
+
+            const nextDeleted: Record<string, number> = { ...deleted };
+            Object.keys(deleted).forEach((id) => {
+              if (!remoteMap.has(id)) {
+                delete nextDeleted[id];
+              }
+            });
+            if (Object.keys(nextDeleted).length !== Object.keys(deleted).length) {
+              setMealsDeleted(nextDeleted);
+            }
+
+            return merged;
+          });
+        }
+      }
+      if (remoteHistory) {
+        const normalizedRemote = normalizeHistory(remoteHistory);
+        const hasPlanChanges = Object.keys(plansTouchedRef.current).length > 0;
+        if (!hasPlanChanges) {
+          setWeeklyHistory(normalizedRemote);
+        } else {
+          setWeeklyHistory((prev) => mergeWeeklyHistory(prev, normalizedRemote));
+        }
+      }
 
       if (!remoteMeals && !remoteHistory) {
         setSyncStatus('error');
@@ -237,13 +396,29 @@ export const useAppState = () => {
       const remotePlan = await api.getWeeklyPlan(plannerWeekStart);
       if (remotePlan) {
         const normalizedPlan = normalizeWeeklyPlan(remotePlan);
+        const localPlan = weeklyPlansRef.current[plannerWeekStart];
+        const touchedAt = plansTouchedRef.current[plannerWeekStart];
+        let planToUse = normalizedPlan;
+        if (localPlan) {
+          if (touchedAt) {
+            planToUse = localPlan;
+            if (arePlansEqual(localPlan, normalizedPlan)) {
+              setPlansTouched((prev) => {
+                const next = { ...prev };
+                delete next[plannerWeekStart];
+                return next;
+              });
+              planToUse = normalizedPlan;
+            }
+          }
+        }
         setWeeklyPlans((prev) => ({
           ...prev,
-          [plannerWeekStart]: normalizedPlan
+          [plannerWeekStart]: planToUse
         }));
         setWeeklyHistory((prev) => {
           const next = prev.filter((entry) => entry.weekStart !== plannerWeekStart);
-          return [{ weekStart: plannerWeekStart, days: normalizedPlan }, ...next];
+          return [{ weekStart: plannerWeekStart, days: planToUse }, ...next];
         });
         setSyncStatus('idle');
       } else {
@@ -330,12 +505,36 @@ export const useAppState = () => {
   const addMeal = useCallback((meal: Omit<Meal, 'id'>) => {
     const next: Meal = { ...meal, id: generateId() };
     setMeals((prev) => [next, ...prev]);
-    void syncCall(() => api.createMeal(next));
+    setMealsTouched((prev) => ({ ...prev, [next.id]: Date.now() }));
+    setMealsDeleted((prev) => {
+      if (!prev[next.id]) return prev;
+      const nextMap = { ...prev };
+      delete nextMap[next.id];
+      return nextMap;
+    });
+    void (async () => {
+      const result = await syncCall(() => api.createMeal(next));
+      if (!result) return;
+      setMealsTouched((prev) => {
+        const nextMap = { ...prev };
+        delete nextMap[next.id];
+        return nextMap;
+      });
+    })();
   }, [syncCall]);
 
   const updateMeal = useCallback((meal: Meal) => {
     setMeals((prev) => prev.map((item) => (item.id === meal.id ? meal : item)));
-    void syncCall(() => api.updateMeal(meal.id, meal));
+    setMealsTouched((prev) => ({ ...prev, [meal.id]: Date.now() }));
+    void (async () => {
+      const result = await syncCall(() => api.updateMeal(meal.id, meal));
+      if (!result) return;
+      setMealsTouched((prev) => {
+        const nextMap = { ...prev };
+        delete nextMap[meal.id];
+        return nextMap;
+      });
+    })();
   }, [syncCall]);
 
   const deleteMeal = useCallback((id: string) => {
@@ -351,22 +550,43 @@ export const useAppState = () => {
       });
       return next;
     });
-    void syncCall(() => api.deleteMeal(id));
+    setMealsDeleted((prev) => ({ ...prev, [id]: Date.now() }));
+    setMealsTouched((prev) => {
+      if (!prev[id]) return prev;
+      const nextMap = { ...prev };
+      delete nextMap[id];
+      return nextMap;
+    });
+    void (async () => {
+      const result = await syncCall(() => api.deleteMeal(id));
+      if (!result) return;
+      setMealsDeleted((prev) => {
+        const nextMap = { ...prev };
+        delete nextMap[id];
+        return nextMap;
+      });
+    })();
   }, [syncCall]);
 
   const updateWeeklyPlan = useCallback(
     (day: keyof WeeklyPlan, mealIds: string[]) => {
-      setWeeklyPlans((prev) => {
-        const current = prev[plannerWeekStart] ?? normalizeWeeklyPlan(EMPTY_WEEKLY_PLAN);
-        const nextPlan = { ...current, [day]: mealIds } as WeeklyPlan;
-        const next = { ...prev, [plannerWeekStart]: nextPlan };
-        setWeeklyHistory((history) => {
-          const filtered = history.filter((entry) => entry.weekStart !== plannerWeekStart);
-          return [{ weekStart: plannerWeekStart, days: nextPlan }, ...filtered];
-        });
-        void syncCall(() => api.updateWeeklyPlan(nextPlan, plannerWeekStart));
-        return next;
+      const current = weeklyPlansRef.current[plannerWeekStart] ?? normalizeWeeklyPlan(EMPTY_WEEKLY_PLAN);
+      const nextPlan = { ...current, [day]: mealIds } as WeeklyPlan;
+      setWeeklyPlans((prev) => ({ ...prev, [plannerWeekStart]: nextPlan }));
+      setWeeklyHistory((history) => {
+        const filtered = history.filter((entry) => entry.weekStart !== plannerWeekStart);
+        return [{ weekStart: plannerWeekStart, days: nextPlan }, ...filtered];
       });
+      setPlansTouched((prev) => ({ ...prev, [plannerWeekStart]: Date.now() }));
+      void (async () => {
+        const result = await syncCall(() => api.updateWeeklyPlan(nextPlan, plannerWeekStart));
+        if (!result) return;
+        setPlansTouched((prev) => {
+          const nextMap = { ...prev };
+          delete nextMap[plannerWeekStart];
+          return nextMap;
+        });
+      })();
     },
     [plannerWeekStart, syncCall]
   );
@@ -423,7 +643,16 @@ export const useAppState = () => {
         ...prev,
         [snapshot.weekStart]: normalized
       }));
-      void syncCall(() => api.updateWeeklyPlan(normalized, snapshot.weekStart));
+      setPlansTouched((prev) => ({ ...prev, [snapshot.weekStart]: Date.now() }));
+      void (async () => {
+        const result = await syncCall(() => api.updateWeeklyPlan(normalized, snapshot.weekStart));
+        if (!result) return;
+        setPlansTouched((prev) => {
+          const nextMap = { ...prev };
+          delete nextMap[snapshot.weekStart];
+          return nextMap;
+        });
+      })();
     },
     [syncCall]
   );
@@ -438,6 +667,7 @@ export const useAppState = () => {
       weeklyHistory,
       syncStatus,
       isOnline,
+      mealsSyncingIds,
       addGroceryItem,
       updateGroceryItem,
       deleteGroceryItem,
@@ -460,6 +690,7 @@ export const useAppState = () => {
       weeklyHistory,
       syncStatus,
       isOnline,
+      mealsSyncingIds,
       addGroceryItem,
       updateGroceryItem,
       deleteGroceryItem,
