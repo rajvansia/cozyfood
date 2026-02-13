@@ -344,6 +344,7 @@ export const api = {
           unit: ingredient.unit ?? null,
           category: categoryMap.get(key) ?? 'pantry',
           checked: false,
+          source: 'generated',
           week_start: targetWeek,
           updated_at: now
         });
