@@ -54,12 +54,16 @@ const safe = async <T>(
 
 export const api = {
   isConfigured,
-  getGroceryItems: () =>
+  getGroceryItems: (weekStart?: string) =>
     safe(async (client) => {
-      const { data, error } = await client
+      let query = client
         .from('grocery_items')
         .select('*')
         .order('updated_at', { ascending: false });
+      if (weekStart) {
+        query = query.eq('week_start', weekStart);
+      }
+      const { data, error } = await query;
       if (error) throw error;
       return (data ?? []).map(mapGroceryRow);
     }),

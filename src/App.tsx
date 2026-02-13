@@ -27,6 +27,8 @@ const App = () => {
             groceryItems={appState.groceryItems}
             meals={appState.meals}
             weeklyHistory={appState.weeklyHistory}
+            selectedWeekStart={appState.groceryWeekStart}
+            onWeekChange={appState.setGroceryWeekStart}
             onAdd={appState.addGroceryItem}
             onUpdate={appState.updateGroceryItem}
             onDelete={appState.deleteGroceryItem}

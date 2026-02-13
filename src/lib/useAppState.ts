@@ -14,6 +14,7 @@ import {
   generateId,
   getWeekStartKey,
   mergeGroceryItems,
+  normalizeName,
   normalizeWeeklyPlan
 } from './utils';
 
@@ -22,7 +23,8 @@ const STORAGE_KEYS = {
   meals: 'cozyfood.meals',
   plans: 'cozyfood.plans',
   plannerWeek: 'cozyfood.plannerWeek',
-  history: 'cozyfood.history'
+  history: 'cozyfood.history',
+  groceryWeek: 'cozyfood.groceryWeek'
 };
 
 const readStorage = <T,>(key: string, fallback: T): T => {
@@ -53,6 +55,44 @@ export const useAppState = () => {
       ...snapshot,
       days: normalizeWeeklyPlan(snapshot.days)
     }));
+  const getGroceryKey = useCallback(
+    (item: GroceryItem) => {
+      const week = item.weekStart ?? defaultWeekStart;
+      return `${normalizeName(item.name)}|${item.unit ?? ''}|${week}`;
+    },
+    [defaultWeekStart]
+  );
+  const mergeGroceryForWeek = useCallback(
+    (localWeek: GroceryItem[], remoteWeek: GroceryItem[]) => {
+      const merged = new Map<string, GroceryItem>();
+      const toTimestamp = (value?: string) => {
+        if (!value) return 0;
+        const parsed = Date.parse(value);
+        return Number.isNaN(parsed) ? 0 : parsed;
+      };
+
+      localWeek.forEach((item) => {
+        merged.set(getGroceryKey(item), item);
+      });
+
+      remoteWeek.forEach((item) => {
+        const key = getGroceryKey(item);
+        const existing = merged.get(key);
+        if (!existing) {
+          merged.set(key, item);
+          return;
+        }
+        const localTime = toTimestamp(existing.updatedAt);
+        const remoteTime = toTimestamp(item.updatedAt);
+        if (remoteTime >= localTime) {
+          merged.set(key, item);
+        }
+      });
+
+      return Array.from(merged.values());
+    },
+    [getGroceryKey]
+  );
   const normalizePlansMap = (plans: Record<string, WeeklyPlan>) => {
     const normalized: Record<string, WeeklyPlan> = {};
     Object.keys(plans).forEach((week) => {
@@ -69,6 +109,9 @@ export const useAppState = () => {
   );
   const [plannerWeekStart, setPlannerWeekStart] = useState<string>(() =>
     readStorage(STORAGE_KEYS.plannerWeek, defaultWeekStart)
+  );
+  const [groceryWeekStart, setGroceryWeekStart] = useState<string>(() =>
+    readStorage(STORAGE_KEYS.groceryWeek, defaultWeekStart)
   );
   const [weeklyPlans, setWeeklyPlans] = useState<Record<string, WeeklyPlan>>(() => {
     const stored = readStorage<Record<string, WeeklyPlan>>(STORAGE_KEYS.plans, {});
@@ -116,6 +159,10 @@ export const useAppState = () => {
   }, [plannerWeekStart]);
 
   useEffect(() => {
+    writeStorage(STORAGE_KEYS.groceryWeek, groceryWeekStart);
+  }, [groceryWeekStart]);
+
+  useEffect(() => {
     writeStorage(STORAGE_KEYS.history, weeklyHistory);
   }, [weeklyHistory]);
 
@@ -127,17 +174,15 @@ export const useAppState = () => {
 
     const loadRemote = async () => {
       setSyncStatus('syncing');
-      const [remoteGrocery, remoteMeals, remoteHistory] = await Promise.all([
-        api.getGroceryItems(),
+      const [remoteMeals, remoteHistory] = await Promise.all([
         api.getMeals(),
         api.getWeeklyPlans()
       ]);
 
-      if (remoteGrocery) setGroceryItems(normalizeGrocery(remoteGrocery));
       if (remoteMeals) setMeals(remoteMeals);
       if (remoteHistory) setWeeklyHistory(normalizeHistory(remoteHistory));
 
-      if (!remoteGrocery && !remoteMeals && !remoteHistory) {
+      if (!remoteMeals && !remoteHistory) {
         setSyncStatus('error');
       } else {
         setSyncStatus('idle');
@@ -146,6 +191,35 @@ export const useAppState = () => {
 
     loadRemote().catch(() => setSyncStatus('error'));
   }, [isOnline]);
+
+  useEffect(() => {
+    if (!api.isConfigured || !isOnline) {
+      setSyncStatus('offline');
+      return;
+    }
+
+    const loadGrocery = async () => {
+      setSyncStatus('syncing');
+      const remoteGrocery = await api.getGroceryItems(groceryWeekStart);
+      if (remoteGrocery) {
+        const normalizedRemote = normalizeGrocery(remoteGrocery);
+        setGroceryItems((prev) => {
+          const filtered = prev.filter(
+            (item) => (item.weekStart ?? defaultWeekStart) !== groceryWeekStart
+          );
+          const localWeek = prev.filter(
+            (item) => (item.weekStart ?? defaultWeekStart) === groceryWeekStart
+          );
+          return [...filtered, ...mergeGroceryForWeek(localWeek, normalizedRemote)];
+        });
+        setSyncStatus('idle');
+      } else {
+        setSyncStatus('error');
+      }
+    };
+
+    loadGrocery().catch(() => setSyncStatus('error'));
+  }, [groceryWeekStart, isOnline, defaultWeekStart, mergeGroceryForWeek]);
 
   useEffect(() => {
     setWeeklyPlans((prev) => {
@@ -202,18 +276,27 @@ export const useAppState = () => {
       updatedAt: new Date().toISOString()
     };
     setGroceryItems((prev) => [next, ...prev]);
-    void syncCall(() => api.createGroceryItem(next));
-  }, [syncCall, defaultWeekStart]);
+    void (async () => {
+      const remote = await syncCall(() => api.createGroceryItem(next));
+      if (!remote) return;
+      setGroceryItems((prev) => {
+        const key = getGroceryKey(remote);
+        const filtered = prev.filter((existing) => getGroceryKey(existing) !== key);
+        return [remote, ...filtered];
+      });
+    })();
+  }, [syncCall, defaultWeekStart, getGroceryKey]);
 
   const updateGroceryItem = useCallback((id: string, update: Partial<GroceryItem>) => {
+    const updatedAt = new Date().toISOString();
     setGroceryItems((prev) =>
       prev.map((item) =>
         item.id === id
-          ? { ...item, ...update, updatedAt: new Date().toISOString() }
+          ? { ...item, ...update, updatedAt }
           : item
       )
     );
-    void syncCall(() => api.updateGroceryItem(id, update));
+    void syncCall(() => api.updateGroceryItem(id, { ...update, updatedAt }));
   }, [syncCall]);
 
   const deleteGroceryItem = useCallback((id: string) => {
@@ -222,21 +305,23 @@ export const useAppState = () => {
   }, [syncCall]);
 
   const toggleGroceryItem = useCallback(
-    (id: string) => {
-      let nextChecked: boolean | undefined = undefined;
+    (id: string, nextChecked?: boolean) => {
+      let resolved: boolean | undefined = nextChecked;
+      const updatedAt = new Date().toISOString();
       setGroceryItems((prev) =>
         prev.map((item) => {
           if (item.id !== id) return item;
-          nextChecked = !item.checked;
+          const updated = nextChecked ?? !item.checked;
+          resolved = updated;
           return {
             ...item,
-            checked: nextChecked,
-            updatedAt: new Date().toISOString()
+            checked: updated,
+            updatedAt
           };
         })
       );
-      if (nextChecked !== undefined) {
-        void syncCall(() => api.updateGroceryItem(id, { checked: nextChecked }));
+      if (resolved !== undefined) {
+        void syncCall(() => api.updateGroceryItem(id, { checked: resolved, updatedAt }));
       }
     },
     [syncCall]
@@ -300,9 +385,35 @@ export const useAppState = () => {
   const generateGroceryList = useCallback(() => {
     const ingredients = aggregateIngredientsFromPlan(meals, weeklyPlan);
     setGroceryItems((prev) => mergeGroceryItems(prev, ingredients, plannerWeekStart));
-    void syncCall(() => api.generateGroceryList(ingredients, plannerWeekStart));
+    void (async () => {
+      const result = await syncCall(() =>
+        api.generateGroceryList(ingredients, plannerWeekStart)
+      );
+      if (!result) return;
+      const refreshed = await syncCall(() => api.getGroceryItems(plannerWeekStart));
+      if (refreshed) {
+        const normalizedRefreshed = normalizeGrocery(refreshed);
+        setGroceryItems((prev) => {
+          const filtered = prev.filter(
+            (item) => (item.weekStart ?? defaultWeekStart) !== plannerWeekStart
+          );
+          const localWeek = prev.filter(
+            (item) => (item.weekStart ?? defaultWeekStart) === plannerWeekStart
+          );
+          return [...filtered, ...mergeGroceryForWeek(localWeek, normalizedRefreshed)];
+        });
+      }
+    })();
     saveWeeklySnapshot();
-  }, [meals, weeklyPlan, syncCall, saveWeeklySnapshot, plannerWeekStart]);
+  }, [
+    meals,
+    weeklyPlan,
+    syncCall,
+    saveWeeklySnapshot,
+    plannerWeekStart,
+    mergeGroceryForWeek,
+    defaultWeekStart
+  ]);
 
   const loadWeeklySnapshot = useCallback(
     (snapshot: WeeklyPlanByWeek) => {
@@ -322,6 +433,7 @@ export const useAppState = () => {
       groceryItems,
       meals,
       plannerWeekStart,
+      groceryWeekStart,
       weeklyPlan,
       weeklyHistory,
       syncStatus,
@@ -334,6 +446,7 @@ export const useAppState = () => {
       updateMeal,
       deleteMeal,
       setPlannerWeekStart,
+      setGroceryWeekStart,
       updateWeeklyPlan,
       generateGroceryList,
       loadWeeklySnapshot
@@ -342,6 +455,7 @@ export const useAppState = () => {
       groceryItems,
       meals,
       plannerWeekStart,
+      groceryWeekStart,
       weeklyPlan,
       weeklyHistory,
       syncStatus,
@@ -354,6 +468,7 @@ export const useAppState = () => {
       updateMeal,
       deleteMeal,
       setPlannerWeekStart,
+      setGroceryWeekStart,
       updateWeeklyPlan,
       generateGroceryList,
       loadWeeklySnapshot

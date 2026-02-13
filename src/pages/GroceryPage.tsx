@@ -32,10 +32,12 @@ type GroceryPageProps = {
   groceryItems: GroceryItem[];
   meals: Meal[];
   weeklyHistory: WeeklyPlanByWeek[];
+  selectedWeekStart: string;
+  onWeekChange: (weekStart: string) => void;
   onAdd: (item: Omit<GroceryItem, 'id' | 'updatedAt'>) => void;
   onUpdate: (id: string, update: Partial<GroceryItem>) => void;
   onDelete: (id: string) => void;
-  onToggle: (id: string) => void;
+  onToggle: (id: string, nextChecked?: boolean) => void;
 };
 
 type GroceryFormState = {
@@ -56,6 +58,8 @@ export const GroceryPage = ({
   groceryItems,
   meals,
   weeklyHistory,
+  selectedWeekStart,
+  onWeekChange,
   onAdd,
   onUpdate,
   onDelete,
@@ -63,15 +67,12 @@ export const GroceryPage = ({
 }: GroceryPageProps) => {
   const [form, setForm] = useState<GroceryFormState>(defaultForm);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [selectedWeek, setSelectedWeek] = useState<string>('current');
   const [pulseId, setPulseId] = useState<string | null>(null);
   const pulseTimer = useRef<number | null>(null);
   const itemRefs = useRef(new Map<string, HTMLDivElement>());
   const itemPositions = useRef(new Map<string, DOMRect>());
 
   const currentWeekStart = useMemo(() => getWeekStartKey(new Date()), []);
-  const selectedWeekStart =
-    selectedWeek === 'current' ? currentWeekStart : selectedWeek;
   const dayKeys: Array<keyof WeeklyPlan> = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 
   const sortedItems = useMemo(() => {
@@ -82,18 +83,16 @@ export const GroceryPage = ({
   }, [groceryItems, currentWeekStart, selectedWeekStart]);
 
   const weekOptions = useMemo(() => {
-    const options: Array<{ id: string; label: string }> = [
-      { id: 'current', label: `This week (${formatWeekLabel(currentWeekStart)})` }
-    ];
+    const options = new Map<string, string>();
+    options.set(currentWeekStart, `This week (${formatWeekLabel(currentWeekStart)})`);
     weeklyHistory.forEach((snapshot) => {
-      if (snapshot.weekStart === currentWeekStart) return;
-      options.push({
-        id: snapshot.weekStart,
-        label: `Week of ${formatWeekLabel(snapshot.weekStart)}`
-      });
+      options.set(snapshot.weekStart, `Week of ${formatWeekLabel(snapshot.weekStart)}`);
     });
-    return options;
-  }, [currentWeekStart, weeklyHistory]);
+    if (!options.has(selectedWeekStart)) {
+      options.set(selectedWeekStart, `Week of ${formatWeekLabel(selectedWeekStart)}`);
+    }
+    return Array.from(options.entries()).map(([id, label]) => ({ id, label }));
+  }, [currentWeekStart, weeklyHistory, selectedWeekStart]);
 
   const selectedWeekPlan = useMemo(() => {
     const match = weeklyHistory.find((entry) => entry.weekStart === selectedWeekStart);
@@ -212,8 +211,8 @@ export const GroceryPage = ({
     setForm(defaultForm);
   };
 
-  const handleToggle = (id: string) => {
-    onToggle(id);
+  const handleToggle = (id: string, nextChecked?: boolean) => {
+    onToggle(id, nextChecked);
     setPulseId(id);
     if (pulseTimer.current) {
       window.clearTimeout(pulseTimer.current);
@@ -235,8 +234,8 @@ export const GroceryPage = ({
           <div className="flex flex-wrap items-center gap-3">
             <Badge>Week of {formatWeekLabel(selectedWeekStart)}</Badge>
             <Select
-              value={selectedWeek}
-              onChange={(event) => setSelectedWeek(event.target.value)}
+              value={selectedWeekStart}
+              onChange={(event) => onWeekChange(event.target.value)}
               className="max-w-[240px]"
             >
               {weekOptions.map((option) => (
@@ -281,7 +280,10 @@ export const GroceryPage = ({
               } ${pulseId === item.id ? 'animate-pulseOnce' : ''}`}
             >
               <div className="flex items-center gap-3">
-                <Checkbox checked={item.checked} onChange={() => handleToggle(item.id)} />
+                <Checkbox
+                  checked={item.checked}
+                  onChange={(event) => handleToggle(item.id, event.currentTarget.checked)}
+                />
                 <div>
                   <p className={`font-semibold text-ink ${item.checked ? 'line-through' : ''}`}>
                     {item.name}
