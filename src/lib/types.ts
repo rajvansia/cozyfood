@@ -17,6 +17,7 @@ export type GroceryItem = {
   checked: boolean;
   weekStart: string;
   updatedAt: string;
+  source?: 'manual' | 'generated';
 };
 
 export type Ingredient = {

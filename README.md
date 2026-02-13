@@ -40,7 +40,7 @@ When you tap **Generate Grocery List**, the app:
 1. Collects all meals assigned in the weekly planner.
 2. Flattens and deduplicates ingredients by `name + unit`.
 3. Sums quantities for matching ingredients.
-4. Merges into the grocery list (existing items are incremented, new ones are appended).
+4. Rebuilds the week’s **generated** grocery items while keeping any **manual** items intact.
 
 The logic lives in `src/lib/utils.ts` and is called by `useAppState`.
 
@@ -48,13 +48,13 @@ The logic lives in `src/lib/utils.ts` and is called by `useAppState`.
 
 Create tables with the following columns (snake_case recommended):
 
-- `grocery_items`: `id (uuid)`, `name (text)`, `quantity (numeric)`, `unit (text)`, `category (text)`, `checked (bool)`, `week_start (date)`, `updated_at (timestamptz)`
+- `grocery_items`: `id (uuid)`, `name (text)`, `quantity (numeric)`, `unit (text)`, `category (text)`, `checked (bool)`, `week_start (date)`, `updated_at (timestamptz)`, `source (text)`
 - `meals`: `id (uuid)`, `meal_name (text)`, `notes (text)`
 - `meal_ingredients`: `id (uuid)`, `meal_id (uuid)`, `ingredient (text)`, `quantity (numeric)`, `unit (text)`
 - `weekly_plan`: `week_start (date)`, `day (text)`, `meal_ids (uuid[])`, `updated_at (timestamptz)`
 
 Recommended indexes:
-- Unique index on `grocery_items (week_start, name, unit)` for clean merges.
+- Unique index on `grocery_items (week_start, lower(name), coalesce(unit,''), source)` so manual and generated items can coexist.
 - Unique index on `weekly_plan (week_start, day)` for upserts.
 
 Note: The app deletes existing `weekly_plan` rows for a given week before inserting updates, but a unique constraint is still recommended.

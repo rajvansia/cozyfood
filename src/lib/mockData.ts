@@ -12,7 +12,8 @@ export const mockGroceryItems: GroceryItem[] = [
     category: 'produce',
     checked: false,
     weekStart: currentWeekStart,
-    updatedAt: new Date().toISOString()
+    updatedAt: new Date().toISOString(),
+    source: 'manual'
   },
   {
     id: 'g-2',
@@ -22,7 +23,8 @@ export const mockGroceryItems: GroceryItem[] = [
     category: 'dairy',
     checked: false,
     weekStart: currentWeekStart,
-    updatedAt: new Date().toISOString()
+    updatedAt: new Date().toISOString(),
+    source: 'manual'
   },
   {
     id: 'g-3',
@@ -32,7 +34,8 @@ export const mockGroceryItems: GroceryItem[] = [
     category: 'bakery',
     checked: true,
     weekStart: currentWeekStart,
-    updatedAt: new Date().toISOString()
+    updatedAt: new Date().toISOString(),
+    source: 'manual'
   }
 ];
 

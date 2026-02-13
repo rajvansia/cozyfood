@@ -10,10 +10,10 @@ import {
 } from './types';
 import {
   aggregateIngredientsFromPlan,
+  buildGroceryItemsForWeek,
   EMPTY_WEEKLY_PLAN,
   generateId,
   getWeekStartKey,
-  mergeGroceryItems,
   normalizeName,
   normalizeWeeklyPlan
 } from './utils';
@@ -53,7 +53,8 @@ export const useAppState = () => {
   const normalizeGrocery = (items: GroceryItem[]) =>
     items.map((item) => ({
       ...item,
-      weekStart: item.weekStart ?? defaultWeekStart
+      weekStart: item.weekStart ?? defaultWeekStart,
+      source: item.source ?? 'manual'
     }));
   const normalizeHistory = (history: WeeklyPlanByWeek[]) =>
     history.map((snapshot) => ({
@@ -63,7 +64,8 @@ export const useAppState = () => {
   const getGroceryKey = useCallback(
     (item: GroceryItem) => {
       const week = item.weekStart ?? defaultWeekStart;
-      return `${normalizeName(item.name)}|${item.unit ?? ''}|${week}`;
+      const source = item.source ?? 'manual';
+      return `${normalizeName(item.name)}|${item.unit ?? ''}|${week}|${source}`;
     },
     [defaultWeekStart]
   );
@@ -448,7 +450,8 @@ export const useAppState = () => {
       ...item,
       id: generateId(),
       weekStart: item.weekStart ?? defaultWeekStart,
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
+      source: item.source ?? 'manual'
     };
     setGroceryItems((prev) => [next, ...prev]);
     void (async () => {
@@ -604,7 +607,16 @@ export const useAppState = () => {
 
   const generateGroceryList = useCallback(() => {
     const ingredients = aggregateIngredientsFromPlan(meals, weeklyPlan);
-    setGroceryItems((prev) => mergeGroceryItems(prev, ingredients, plannerWeekStart));
+    setGroceryItems((prev) => {
+      const filtered = prev.filter(
+        (item) => (item.weekStart ?? defaultWeekStart) !== plannerWeekStart
+      );
+      const localWeek = prev.filter(
+        (item) => (item.weekStart ?? defaultWeekStart) === plannerWeekStart
+      );
+      const replacement = buildGroceryItemsForWeek(localWeek, ingredients, plannerWeekStart);
+      return [...filtered, ...replacement];
+    });
     void (async () => {
       const result = await syncCall(() =>
         api.generateGroceryList(ingredients, plannerWeekStart)
@@ -632,6 +644,7 @@ export const useAppState = () => {
     saveWeeklySnapshot,
     plannerWeekStart,
     mergeGroceryForWeek,
+    buildGroceryItemsForWeek,
     defaultWeekStart
   ]);
 

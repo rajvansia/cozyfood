@@ -13,7 +13,8 @@ const mapGroceryRow = (row: any): GroceryItem => ({
   category: row.category,
   checked: Boolean(row.checked),
   weekStart: row.week_start,
-  updatedAt: row.updated_at
+  updatedAt: row.updated_at,
+  source: row.source ?? 'manual'
 });
 
 const mapGroceryToRow = (item: GroceryItem) => ({
@@ -24,7 +25,8 @@ const mapGroceryToRow = (item: GroceryItem) => ({
   category: item.category,
   checked: item.checked,
   week_start: item.weekStart,
-  updated_at: item.updatedAt
+  updated_at: item.updatedAt,
+  source: item.source ?? 'manual'
 });
 
 const mapMealRow = (row: any): Meal => ({
@@ -70,6 +72,7 @@ export const api = {
   createGroceryItem: (item: GroceryItem) =>
     safe(async (client) => {
       const unit = item.unit ?? '';
+      const source = item.source ?? 'manual';
       const { data: existingRows, error: existingError } = await client
         .from('grocery_items')
         .select('*')
@@ -79,7 +82,8 @@ export const api = {
       const match = (existingRows ?? []).find(
         (row) =>
           normalizeName(row.name) === normalizeName(item.name) &&
-          (row.unit ?? '') === unit
+          (row.unit ?? '') === unit &&
+          (row.source ?? 'manual') === source
       );
 
       if (match) {
@@ -312,45 +316,45 @@ export const api = {
         .eq('week_start', targetWeek);
       if (error) throw error;
 
-      const map = new Map<string, any>();
+      const categoryMap = new Map<string, string>();
       (existing ?? []).forEach((row) => {
         const key = `${normalizeName(row.name)}|${row.unit ?? ''}`;
-        map.set(key, row);
+        categoryMap.set(key, row.category || 'pantry');
       });
 
-      const updates: Array<{ id: string; quantity: number }> = [];
       const inserts: Array<any> = [];
       const now = new Date().toISOString();
 
+      const summed = new Map<string, Ingredient>();
       ingredients.forEach((ingredient) => {
         const key = `${normalizeName(ingredient.ingredient)}|${ingredient.unit ?? ''}`;
-        const match = map.get(key);
-        if (match) {
-          updates.push({
-            id: match.id,
-            quantity: Number(match.quantity) + ingredient.quantity
-          });
+        const existingIngredient = summed.get(key);
+        if (existingIngredient) {
+          existingIngredient.quantity += ingredient.quantity;
         } else {
-          inserts.push({
-            id: generateId(),
-            name: ingredient.ingredient,
-            quantity: ingredient.quantity,
-            unit: ingredient.unit ?? null,
-            category: 'pantry',
-            checked: false,
-            week_start: targetWeek,
-            updated_at: now
-          });
+          summed.set(key, { ...ingredient });
         }
       });
 
-      for (const update of updates) {
-        const { error: updateError } = await client
-          .from('grocery_items')
-          .update({ quantity: update.quantity, checked: false, updated_at: now })
-          .eq('id', update.id);
-        if (updateError) throw updateError;
-      }
+      summed.forEach((ingredient, key) => {
+        inserts.push({
+          id: generateId(),
+          name: ingredient.ingredient,
+          quantity: ingredient.quantity,
+          unit: ingredient.unit ?? null,
+          category: categoryMap.get(key) ?? 'pantry',
+          checked: false,
+          week_start: targetWeek,
+          updated_at: now
+        });
+      });
+
+      const { error: deleteError } = await client
+        .from('grocery_items')
+        .delete()
+        .eq('week_start', targetWeek)
+        .eq('source', 'generated');
+      if (deleteError) throw deleteError;
 
       if (inserts.length) {
         const { error: insertError } = await client
@@ -359,6 +363,6 @@ export const api = {
         if (insertError) throw insertError;
       }
 
-      return { ok: true, added: inserts.length };
+      return { ok: true, added: inserts.length, replaced: true };
     })
 };

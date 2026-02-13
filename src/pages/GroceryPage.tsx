@@ -12,8 +12,7 @@ import {
   formatQuantity,
   formatWeekLabel,
   getWeekStartKey,
-  normalizeName,
-  sortGroceryItems
+  normalizeName
 } from '../lib/utils';
 import { Category, GroceryItem, Meal, WeeklyPlan, WeeklyPlanByWeek } from '../lib/types';
 
@@ -47,6 +46,18 @@ type GroceryFormState = {
   category: Category;
 };
 
+type GroceryGroup = {
+  key: string;
+  itemIds: string[];
+  primaryItem: GroceryItem;
+  name: string;
+  unit?: string;
+  quantity: number;
+  category: Category;
+  checked: boolean;
+  sources: Array<'manual' | 'generated'>;
+};
+
 const defaultForm: GroceryFormState = {
   name: '',
   quantity: '1',
@@ -69,17 +80,65 @@ export const GroceryPage = ({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [pulseId, setPulseId] = useState<string | null>(null);
   const pulseTimer = useRef<number | null>(null);
-  const itemRefs = useRef(new Map<string, HTMLDivElement>());
-  const itemPositions = useRef(new Map<string, DOMRect>());
+  const rowRefs = useRef(new Map<string, HTMLDivElement>());
+  const rowPositions = useRef(new Map<string, DOMRect>());
 
   const currentWeekStart = useMemo(() => getWeekStartKey(new Date()), []);
   const dayKeys: Array<keyof WeeklyPlan> = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 
-  const sortedItems = useMemo(() => {
+  const groupedItems = useMemo(() => {
     const filtered = groceryItems.filter(
       (item) => (item.weekStart ?? currentWeekStart) === selectedWeekStart
     );
-    return sortGroceryItems(filtered);
+    const groups = new Map<string, GroceryGroup>();
+
+    filtered.forEach((item) => {
+      const unit = item.unit ?? '';
+      const key = `${normalizeName(item.name)}|${unit}`;
+      const source = (item.source ?? 'manual') as 'manual' | 'generated';
+      const existing = groups.get(key);
+      if (!existing) {
+        groups.set(key, {
+          key,
+          itemIds: [item.id],
+          primaryItem: item,
+          name: item.name,
+          unit: item.unit,
+          quantity: item.quantity,
+          category: item.category,
+          checked: item.checked,
+          sources: [source]
+        });
+        return;
+      }
+
+      existing.itemIds.push(item.id);
+      existing.quantity += item.quantity;
+      existing.checked = existing.checked && item.checked;
+      if (!existing.sources.includes(source)) {
+        existing.sources.push(source);
+      }
+
+      const primarySource = existing.primaryItem.source ?? 'manual';
+      if (source === 'manual' && primarySource !== 'manual') {
+        existing.primaryItem = item;
+        existing.name = item.name;
+        existing.unit = item.unit;
+        existing.category = item.category;
+      }
+
+      if (source === 'manual') {
+        existing.category = item.category;
+      }
+    });
+
+    const result = Array.from(groups.values());
+    return result.sort((a, b) => {
+      if (a.checked === b.checked) {
+        return a.name.localeCompare(b.name);
+      }
+      return a.checked ? 1 : -1;
+    });
   }, [groceryItems, currentWeekStart, selectedWeekStart]);
 
   const weekOptions = useMemo(() => {
@@ -142,12 +201,12 @@ export const GroceryPage = ({
 
   useLayoutEffect(() => {
     const newPositions = new Map<string, DOMRect>();
-    itemRefs.current.forEach((node, id) => {
+    rowRefs.current.forEach((node, id) => {
       newPositions.set(id, node.getBoundingClientRect());
     });
 
-    const prevPositions = itemPositions.current;
-    itemPositions.current = newPositions;
+    const prevPositions = rowPositions.current;
+    rowPositions.current = newPositions;
 
     if (prevPositions.size === 0 || prefersReducedMotion || !supportsTranslate) {
       return;
@@ -159,18 +218,18 @@ export const GroceryPage = ({
       const dx = prev.left - rect.left;
       const dy = prev.top - rect.top;
       if (dx === 0 && dy === 0) return;
-      const node = itemRefs.current.get(id);
+      const node = rowRefs.current.get(id);
       if (!node) return;
       node.style.transition = 'translate 0s';
       node.style.translate = `${dx}px ${dy}px`;
       window.requestAnimationFrame(() => {
-        const currentNode = itemRefs.current.get(id);
+        const currentNode = rowRefs.current.get(id);
         if (!currentNode) return;
         currentNode.style.transition = 'translate 560ms cubic-bezier(0.22, 0.61, 0.36, 1)';
         currentNode.style.translate = '0px 0px';
       });
     });
-  }, [sortedItems, prefersReducedMotion, supportsTranslate]);
+  }, [groupedItems, prefersReducedMotion, supportsTranslate]);
 
 
 
@@ -211,9 +270,10 @@ export const GroceryPage = ({
     setForm(defaultForm);
   };
 
-  const handleToggle = (id: string, nextChecked?: boolean) => {
-    onToggle(id, nextChecked);
-    setPulseId(id);
+  const handleToggle = (group: GroceryGroup, nextChecked?: boolean) => {
+    const resolved = nextChecked ?? !group.checked;
+    group.itemIds.forEach((id) => onToggle(id, resolved));
+    setPulseId(group.key);
     if (pulseTimer.current) {
       window.clearTimeout(pulseTimer.current);
     }
@@ -257,53 +317,59 @@ export const GroceryPage = ({
       </Card>
 
       <div className="space-y-3">
-        {sortedItems.length === 0 && (
+        {groupedItems.length === 0 && (
           <Card className="text-center">
             <p className="text-ink/70">Your basket is empty. Add your first item below.</p>
           </Card>
         )}
-        {sortedItems.map((item) => (
+        {groupedItems.map((group) => (
           <div
-            key={item.id}
+            key={group.key}
             ref={(node) => {
               if (node) {
-                itemRefs.current.set(item.id, node);
+                rowRefs.current.set(group.key, node);
               } else {
-                itemRefs.current.delete(item.id);
+                rowRefs.current.delete(group.key);
               }
             }}
             className="will-change-transform"
           >
             <Card
               className={`flex items-center justify-between gap-3 transition-all duration-300 ${
-                item.checked ? 'opacity-60 bg-mint/30 border-leaf/30' : ''
-              } ${pulseId === item.id ? 'animate-pulseOnce' : ''}`}
+                group.checked ? 'opacity-60 bg-mint/30 border-leaf/30' : ''
+              } ${pulseId === group.key ? 'animate-pulseOnce' : ''}`}
             >
               <div className="flex items-center gap-3">
                 <Checkbox
-                  checked={item.checked}
-                  onChange={(event) => handleToggle(item.id, event.currentTarget.checked)}
+                  checked={group.checked}
+                  onChange={(event) => handleToggle(group, event.currentTarget.checked)}
                 />
                 <div>
-                  <p className={`font-semibold text-ink ${item.checked ? 'line-through' : ''}`}>
-                    {item.name}
+                  <p className={`font-semibold text-ink ${group.checked ? 'line-through' : ''}`}>
+                    {group.name}
                   </p>
                   <p className="text-sm text-ink/70">
-                    {formatQuantity(item.quantity)} {item.unit ?? ''}
+                    {formatQuantity(group.quantity)} {group.unit ?? ''}
                   </p>
-                  {ingredientToMeals.has(normalizeName(item.name)) && (
+                  {group.sources.length === 1 && group.sources[0] === 'generated' && (
+                    <p className="text-xs text-ink/60">From the meal plan</p>
+                  )}
+                  {group.sources.includes('manual') && group.sources.includes('generated') && (
+                    <p className="text-xs text-ink/60">Manual + meal plan</p>
+                  )}
+                  {ingredientToMeals.has(normalizeName(group.name)) && (
                     <p className="text-xs text-ink/60">
-                      Used in: {ingredientToMeals.get(normalizeName(item.name))?.join(', ')}
+                      Used in: {ingredientToMeals.get(normalizeName(group.name))?.join(', ')}
                     </p>
                   )}
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <Badge>{CATEGORY_LABELS[item.category]}</Badge>
+                <Badge>{CATEGORY_LABELS[group.category]}</Badge>
                 <button
                   type="button"
                   className="rounded-full p-2 text-ink/70 transition hover:bg-oatmeal hover:text-ink"
-                  onClick={() => handleEdit(item)}
+                  onClick={() => handleEdit(group.primaryItem)}
                   aria-label="Edit item"
                 >
                   <EditIcon className="h-4 w-4" />
@@ -311,7 +377,7 @@ export const GroceryPage = ({
                 <button
                   type="button"
                   className="rounded-full p-2 text-ink/70 transition hover:bg-oatmeal hover:text-ink"
-                  onClick={() => onDelete(item.id)}
+                  onClick={() => group.itemIds.forEach((id) => onDelete(id))}
                   aria-label="Delete item"
                 >
                   <TrashIcon className="h-4 w-4" />

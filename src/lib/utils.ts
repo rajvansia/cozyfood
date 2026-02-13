@@ -173,6 +173,40 @@ export const mergeGroceryItems = (
   return next;
 };
 
+export const buildGroceryItemsForWeek = (
+  existingForWeek: GroceryItem[],
+  additions: Ingredient[],
+  weekStart = getWeekStartKey(new Date())
+): GroceryItem[] => {
+  const now = new Date().toISOString();
+  const targetWeek = weekStart;
+  const existingMap = new Map<string, GroceryItem>();
+  const manualItems = existingForWeek.filter((item) => item.source !== 'generated');
+
+  existingForWeek.forEach((item) => {
+    const key = `${normalizeName(item.name)}|${item.unit ?? ''}`;
+    existingMap.set(key, item);
+  });
+
+  const generatedItems = sumIngredients(additions).map((ingredient) => {
+    const key = `${normalizeName(ingredient.ingredient)}|${ingredient.unit ?? ''}`;
+    const existing = existingMap.get(key);
+    return {
+      id: generateId(),
+      name: ingredient.ingredient,
+      quantity: ingredient.quantity,
+      unit: ingredient.unit,
+      category: existing?.category ?? 'pantry',
+      checked: false,
+      weekStart: targetWeek,
+      updatedAt: now,
+      source: 'generated' as const
+    };
+  });
+
+  return [...manualItems, ...generatedItems];
+};
+
 export const sortGroceryItems = (items: GroceryItem[]) => {
   return [...items].sort((a, b) => {
     if (a.checked === b.checked) {
