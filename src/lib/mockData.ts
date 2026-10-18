@@ -1,4 +1,4 @@
-import { GroceryItem, Meal, WeeklyPlan } from './types';
+import { GroceryItem, Meal, Plant, WeeklyPlan } from './types';
 import { getWeekStartKey } from './utils';
 
 const currentWeekStart = getWeekStartKey(new Date());
@@ -81,3 +81,42 @@ export const mockPlan: WeeklyPlan = {
   sat: [],
   sun: []
 };
+
+export const mockPlants: Plant[] = [
+  {
+    id: 'p-1',
+    name: 'Basil',
+    variety: 'Sweet basil',
+    location: 'Kitchen window',
+    light: 'bright',
+    wateringEvery: 3,
+    lastWatered: new Date().toISOString().slice(0, 10),
+    notes: 'Pinch tops weekly for bushy growth.',
+    status: 'growing',
+    updatedAt: new Date().toISOString()
+  },
+  {
+    id: 'p-2',
+    name: 'Cherry tomatoes',
+    variety: 'Sun Gold',
+    location: 'Balcony',
+    light: 'bright',
+    wateringEvery: 2,
+    lastWatered: new Date().toISOString().slice(0, 10),
+    notes: 'Feed every 2 weeks.',
+    status: 'blooming',
+    updatedAt: new Date().toISOString()
+  },
+  {
+    id: 'p-3',
+    name: 'Lavender',
+    variety: 'English',
+    location: 'Front porch',
+    light: 'bright',
+    wateringEvery: 7,
+    lastWatered: new Date().toISOString().slice(0, 10),
+    notes: 'Let soil dry between waterings.',
+    status: 'growing',
+    updatedAt: new Date().toISOString()
+  }
+];

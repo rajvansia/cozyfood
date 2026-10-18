@@ -1,7 +1,7 @@
-import { BasketIcon, CalendarIcon, MealIcon } from './icons';
+import { BasketIcon, CalendarIcon, MealIcon, PlantIcon } from './icons';
 import { cn } from '../lib/cn';
 
-export type TabKey = 'grocery' | 'meals' | 'week';
+export type TabKey = 'grocery' | 'meals' | 'week' | 'garden';
 
 type BottomNavProps = {
   activeTab: TabKey;
@@ -11,7 +11,8 @@ type BottomNavProps = {
 const tabs: Array<{ key: TabKey; label: string; icon: typeof BasketIcon }> = [
   { key: 'grocery', label: 'Grocery', icon: BasketIcon },
   { key: 'meals', label: 'Meals', icon: MealIcon },
-  { key: 'week', label: 'Week', icon: CalendarIcon }
+  { key: 'week', label: 'Week', icon: CalendarIcon },
+  { key: 'garden', label: 'Garden', icon: PlantIcon }
 ];
 
 export const BottomNav = ({ activeTab, onChange }: BottomNavProps) => {

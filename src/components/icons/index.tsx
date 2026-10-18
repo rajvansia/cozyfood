@@ -31,6 +31,15 @@ export const CalendarIcon = (props: SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
+export const PlantIcon = (props: SVGProps<SVGSVGElement>) => (
+  <svg viewBox="0 0 24 24" {...baseProps} {...props}>
+    <path d="M12 20v-8" />
+    <path d="M12 12c-3 0-5-2.3-5-5 3.2-.4 5.9 1.2 7 4" />
+    <path d="M12 12c3 0 5-2.3 5-5-3.2-.4-5.9 1.2-7 4" />
+    <path d="M6 20h12" />
+  </svg>
+);
+
 export const SparkleIcon = (props: SVGProps<SVGSVGElement>) => (
   <svg viewBox="0 0 24 24" {...baseProps} {...props}>
     <path d="M12 3l1.6 3.9L18 8l-4.4 1.1L12 13l-1.6-3.9L6 8l4.4-1.1L12 3z" />

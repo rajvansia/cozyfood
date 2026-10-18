@@ -44,3 +44,20 @@ export type WeeklyPlanByWeek = {
   weekStart: string;
   days: WeeklyPlan;
 };
+
+export type LightLevel = 'low' | 'medium' | 'bright';
+
+export type PlantStatus = 'seedling' | 'growing' | 'blooming' | 'harvest' | 'resting';
+
+export type Plant = {
+  id: string;
+  name: string;
+  variety?: string;
+  location: string;
+  light: LightLevel;
+  wateringEvery: number;
+  lastWatered?: string;
+  notes?: string;
+  status: PlantStatus;
+  updatedAt: string;
+};

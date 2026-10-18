@@ -16,6 +16,8 @@ const createIngredient = (): Ingredient => ({
 
 type MealsPageProps = {
   meals: Meal[];
+  staples: Ingredient[];
+  onStaplesChange: (staples: Ingredient[]) => void;
   syncingIds?: string[];
   onAdd: (meal: Omit<Meal, 'id'>) => void;
   onUpdate: (meal: Meal) => void;
@@ -24,6 +26,8 @@ type MealsPageProps = {
 
 export const MealsPage = ({
   meals,
+  staples,
+  onStaplesChange,
   syncingIds = [],
   onAdd,
   onUpdate,
@@ -33,6 +37,18 @@ export const MealsPage = ({
   const [mealName, setMealName] = useState('');
   const [notes, setNotes] = useState('');
   const [ingredients, setIngredients] = useState<Ingredient[]>([createIngredient()]);
+
+  const addStaple = () => {
+    onStaplesChange([...staples, createIngredient()]);
+  };
+
+  const updateStaple = (id: string, changes: Partial<Ingredient>) => {
+    onStaplesChange(staples.map((staple) => (staple.id === id ? { ...staple, ...changes } : staple)));
+  };
+
+  const removeStaple = (id: string) => {
+    onStaplesChange(staples.filter((staple) => staple.id !== id));
+  };
 
   const handleIngredientChange = (id: string, changes: Partial<Ingredient>) => {
     setIngredients((prev) =>
@@ -178,6 +194,56 @@ export const MealsPage = ({
             )}
           </div>
         </form>
+      </Card>
+
+      <Card>
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="font-display text-xl text-ink">Staples</h2>
+            <p className="text-sm text-ink/70">Included every time you generate a weekly grocery list.</p>
+          </div>
+          <Badge>{staples.length} items</Badge>
+        </div>
+        <div className="mt-4 space-y-3">
+          {staples.map((staple) => (
+            <div key={staple.id} className="flex flex-col gap-2 sm:flex-row">
+              <Input
+                placeholder="Staple ingredient"
+                value={staple.ingredient}
+                onChange={(event) => updateStaple(staple.id, { ingredient: event.target.value })}
+              />
+              <div className="flex gap-2">
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.1"
+                  placeholder="Qty"
+                  value={staple.quantity}
+                  onChange={(event) => updateStaple(staple.id, { quantity: Number(event.target.value) })}
+                />
+                <Input
+                  placeholder="Unit"
+                  value={staple.unit ?? ''}
+                  onChange={(event) => updateStaple(staple.id, { unit: event.target.value })}
+                />
+                <button
+                  type="button"
+                  className="rounded-full p-2 text-ink/60 transition hover:bg-oatmeal hover:text-ink"
+                  onClick={() => removeStaple(staple.id)}
+                  aria-label="Remove staple"
+                >
+                  <TrashIcon className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          ))}
+          {staples.length === 0 && (
+            <p className="text-sm text-ink/60">No staples added yet.</p>
+          )}
+          <Button type="button" variant="soft" size="sm" onClick={addStaple}>
+            Add staple
+          </Button>
+        </div>
       </Card>
 
       <div className="space-y-4">

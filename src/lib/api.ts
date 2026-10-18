@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { GroceryItem, Ingredient, Meal, WeeklyPlan, WeeklyPlanByWeek } from './types';
+import { GroceryItem, Ingredient, Meal, Plant, WeeklyPlan, WeeklyPlanByWeek } from './types';
 import { generateId, getWeekStartKey, normalizeName } from './utils';
 
 const isConfigured = Boolean(supabase);
@@ -41,6 +41,32 @@ const mapIngredientRow = (row: any): Ingredient => ({
   ingredient: row.ingredient,
   quantity: Number(row.quantity),
   unit: row.unit ?? undefined
+});
+
+const mapPlantRow = (row: any): Plant => ({
+  id: row.id,
+  name: row.name,
+  variety: row.variety ?? undefined,
+  location: row.location,
+  light: row.light,
+  wateringEvery: Number(row.watering_every),
+  lastWatered: row.last_watered ?? undefined,
+  notes: row.notes ?? undefined,
+  status: row.status,
+  updatedAt: row.updated_at
+});
+
+const mapPlantToRow = (plant: Plant) => ({
+  id: plant.id,
+  name: plant.name,
+  variety: plant.variety ?? null,
+  location: plant.location,
+  light: plant.light,
+  watering_every: plant.wateringEvery,
+  last_watered: plant.lastWatered ?? null,
+  notes: plant.notes ?? null,
+  status: plant.status,
+  updated_at: plant.updatedAt
 });
 
 const safe = async <T>(
@@ -224,6 +250,42 @@ export const api = {
       if (deleteIngredientsError) throw deleteIngredientsError;
 
       const { error } = await client.from('meals').delete().eq('id', id);
+      if (error) throw error;
+      return { ok: true };
+    }),
+  getPlants: () =>
+    safe(async (client) => {
+      const { data, error } = await client
+        .from('plants')
+        .select('*')
+        .order('name');
+      if (error) throw error;
+      return (data ?? []).map(mapPlantRow);
+    }),
+  createPlant: (plant: Plant) =>
+    safe(async (client) => {
+      const { data, error } = await client
+        .from('plants')
+        .insert(mapPlantToRow(plant))
+        .select('*')
+        .single();
+      if (error) throw error;
+      return mapPlantRow(data);
+    }),
+  updatePlant: (id: string, plant: Plant) =>
+    safe(async (client) => {
+      const { data, error } = await client
+        .from('plants')
+        .update(mapPlantToRow(plant))
+        .eq('id', id)
+        .select('*')
+        .single();
+      if (error) throw error;
+      return mapPlantRow(data);
+    }),
+  deletePlant: (id: string) =>
+    safe(async (client) => {
+      const { error } = await client.from('plants').delete().eq('id', id);
       if (error) throw error;
       return { ok: true };
     }),

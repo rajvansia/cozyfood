@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api';
-import { mockGroceryItems, mockMeals, mockPlan } from './mockData';
+import { mockGroceryItems, mockMeals, mockPlan, mockPlants } from './mockData';
 import {
+  Ingredient,
   GroceryItem,
   Meal,
+  Plant,
   SyncStatus,
   WeeklyPlan,
   WeeklyPlanByWeek
@@ -15,12 +17,15 @@ import {
   generateId,
   getWeekStartKey,
   normalizeName,
+  sumIngredients,
   normalizeWeeklyPlan
 } from './utils';
 
 const STORAGE_KEYS = {
   grocery: 'cozyfood.grocery',
   meals: 'cozyfood.meals',
+  staples: 'cozyfood.staples',
+  plants: 'cozyfood.plants',
   plans: 'cozyfood.plans',
   plannerWeek: 'cozyfood.plannerWeek',
   history: 'cozyfood.history',
@@ -150,12 +155,39 @@ export const useAppState = () => {
     },
     []
   );
+  const mergePlants = useCallback((localPlants: Plant[], remotePlants: Plant[]) => {
+    const merged = new Map<string, Plant>();
+    const toTimestamp = (value?: string) => {
+      if (!value) return 0;
+      const parsed = Date.parse(value);
+      return Number.isNaN(parsed) ? 0 : parsed;
+    };
+
+    localPlants.forEach((plant) => merged.set(plant.id, plant));
+    remotePlants.forEach((plant) => {
+      const existing = merged.get(plant.id);
+      if (!existing) {
+        merged.set(plant.id, plant);
+        return;
+      }
+      if (toTimestamp(plant.updatedAt) >= toTimestamp(existing.updatedAt)) {
+        merged.set(plant.id, plant);
+      }
+    });
+    return Array.from(merged.values());
+  }, []);
 
   const [groceryItems, setGroceryItems] = useState<GroceryItem[]>(() =>
     normalizeGrocery(readStorage(STORAGE_KEYS.grocery, mockGroceryItems))
   );
   const [meals, setMeals] = useState<Meal[]>(() =>
     readStorage(STORAGE_KEYS.meals, mockMeals)
+  );
+  const [staples, setStaples] = useState<Ingredient[]>(() =>
+    readStorage(STORAGE_KEYS.staples, [])
+  );
+  const [plants, setPlants] = useState<Plant[]>(() =>
+    readStorage(STORAGE_KEYS.plants, mockPlants)
   );
   const [mealsTouched, setMealsTouched] = useState<Record<string, number>>(() =>
     readStorage(STORAGE_KEYS.mealsTouched, {})
@@ -212,6 +244,14 @@ export const useAppState = () => {
   useEffect(() => {
     writeStorage(STORAGE_KEYS.meals, meals);
   }, [meals]);
+
+  useEffect(() => {
+    writeStorage(STORAGE_KEYS.staples, staples);
+  }, [staples]);
+
+  useEffect(() => {
+    writeStorage(STORAGE_KEYS.plants, plants);
+  }, [plants]);
 
   useEffect(() => {
     writeStorage(STORAGE_KEYS.mealsTouched, mealsTouched);
@@ -272,9 +312,10 @@ export const useAppState = () => {
 
     const loadRemote = async () => {
       setSyncStatus('syncing');
-      const [remoteMeals, remoteHistory] = await Promise.all([
+      const [remoteMeals, remoteHistory, remotePlants] = await Promise.all([
         api.getMeals(),
-        api.getWeeklyPlans()
+        api.getWeeklyPlans(),
+        api.getPlants()
       ]);
 
       if (remoteMeals) {
@@ -342,8 +383,11 @@ export const useAppState = () => {
           setWeeklyHistory((prev) => mergeWeeklyHistory(prev, normalizedRemote));
         }
       }
+      if (remotePlants) {
+        setPlants((prev) => mergePlants(prev, remotePlants));
+      }
 
-      if (!remoteMeals && !remoteHistory) {
+      if (!remoteMeals && !remoteHistory && !remotePlants) {
         setSyncStatus('error');
       } else {
         setSyncStatus('idle');
@@ -571,6 +615,35 @@ export const useAppState = () => {
     })();
   }, [syncCall]);
 
+  const addPlant = useCallback((plant: Omit<Plant, 'id' | 'updatedAt'>) => {
+    const next: Plant = {
+      ...plant,
+      id: generateId(),
+      updatedAt: new Date().toISOString()
+    };
+    setPlants((prev) => [next, ...prev]);
+    void (async () => {
+      const remote = await syncCall(() => api.createPlant(next));
+      if (!remote) return;
+      setPlants((prev) => mergePlants(prev, [remote]));
+    })();
+  }, [syncCall, mergePlants]);
+
+  const updatePlant = useCallback((plant: Plant) => {
+    const updated = { ...plant, updatedAt: new Date().toISOString() };
+    setPlants((prev) => prev.map((item) => (item.id === plant.id ? updated : item)));
+    void (async () => {
+      const remote = await syncCall(() => api.updatePlant(plant.id, updated));
+      if (!remote) return;
+      setPlants((prev) => mergePlants(prev, [remote]));
+    })();
+  }, [syncCall, mergePlants]);
+
+  const deletePlant = useCallback((id: string) => {
+    setPlants((prev) => prev.filter((item) => item.id !== id));
+    void syncCall(() => api.deletePlant(id));
+  }, [syncCall]);
+
   const updateWeeklyPlan = useCallback(
     (day: keyof WeeklyPlan, mealIds: string[]) => {
       const current = weeklyPlansRef.current[plannerWeekStart] ?? normalizeWeeklyPlan(EMPTY_WEEKLY_PLAN);
@@ -606,7 +679,17 @@ export const useAppState = () => {
   }, [weeklyPlan, plannerWeekStart]);
 
   const generateGroceryList = useCallback(() => {
-    const ingredients = aggregateIngredientsFromPlan(meals, weeklyPlan);
+    const ingredients = sumIngredients([
+      ...aggregateIngredientsFromPlan(meals, weeklyPlan),
+      ...staples
+        .filter((staple) => staple.ingredient.trim())
+        .map((staple) => ({
+          ...staple,
+          ingredient: staple.ingredient.trim(),
+          quantity: Number.isNaN(staple.quantity) ? 1 : Number(staple.quantity),
+          unit: staple.unit?.trim() || undefined
+        }))
+    ]);
     setGroceryItems((prev) => {
       const filtered = prev.filter(
         (item) => (item.weekStart ?? defaultWeekStart) !== plannerWeekStart
@@ -639,6 +722,7 @@ export const useAppState = () => {
     saveWeeklySnapshot();
   }, [
     meals,
+    staples,
     weeklyPlan,
     syncCall,
     saveWeeklySnapshot,
@@ -674,6 +758,8 @@ export const useAppState = () => {
     () => ({
       groceryItems,
       meals,
+      staples,
+      plants,
       plannerWeekStart,
       groceryWeekStart,
       weeklyPlan,
@@ -681,6 +767,7 @@ export const useAppState = () => {
       syncStatus,
       isOnline,
       mealsSyncingIds,
+      setStaples,
       addGroceryItem,
       updateGroceryItem,
       deleteGroceryItem,
@@ -688,6 +775,9 @@ export const useAppState = () => {
       addMeal,
       updateMeal,
       deleteMeal,
+      addPlant,
+      updatePlant,
+      deletePlant,
       setPlannerWeekStart,
       setGroceryWeekStart,
       updateWeeklyPlan,
@@ -697,6 +787,8 @@ export const useAppState = () => {
     [
       groceryItems,
       meals,
+      staples,
+      plants,
       plannerWeekStart,
       groceryWeekStart,
       weeklyPlan,
@@ -704,6 +796,7 @@ export const useAppState = () => {
       syncStatus,
       isOnline,
       mealsSyncingIds,
+      setStaples,
       addGroceryItem,
       updateGroceryItem,
       deleteGroceryItem,
@@ -711,6 +804,9 @@ export const useAppState = () => {
       addMeal,
       updateMeal,
       deleteMeal,
+      addPlant,
+      updatePlant,
+      deletePlant,
       setPlannerWeekStart,
       setGroceryWeekStart,
       updateWeeklyPlan,

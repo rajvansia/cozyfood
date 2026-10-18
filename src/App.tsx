@@ -4,6 +4,7 @@ import { BottomNav, TabKey } from './components/BottomNav';
 import { GroceryPage } from './pages/GroceryPage';
 import { MealsPage } from './pages/MealsPage';
 import { WeekPlannerPage } from './pages/WeekPlannerPage';
+import { GardenPage } from './pages/GardenPage';
 import { useAppState } from './lib/useAppState';
 import { PinGate, isPinUnlocked } from './components/PinGate';
 
@@ -38,6 +39,8 @@ const App = () => {
         {activeTab === 'meals' && (
           <MealsPage
             meals={appState.meals}
+            staples={appState.staples}
+            onStaplesChange={appState.setStaples}
             syncingIds={appState.mealsSyncingIds}
             onAdd={appState.addMeal}
             onUpdate={appState.updateMeal}
@@ -54,6 +57,14 @@ const App = () => {
             onPlanChange={appState.updateWeeklyPlan}
             onGenerate={appState.generateGroceryList}
             onLoadHistory={appState.loadWeeklySnapshot}
+          />
+        )}
+        {activeTab === 'garden' && (
+          <GardenPage
+            plants={appState.plants}
+            onAdd={appState.addPlant}
+            onUpdate={appState.updatePlant}
+            onDelete={appState.deletePlant}
           />
         )}
       </main>

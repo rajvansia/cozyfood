@@ -52,6 +52,7 @@ Create tables with the following columns (snake_case recommended):
 - `meals`: `id (uuid)`, `meal_name (text)`, `notes (text)`
 - `meal_ingredients`: `id (uuid)`, `meal_id (uuid)`, `ingredient (text)`, `quantity (numeric)`, `unit (text)`
 - `weekly_plan`: `week_start (date)`, `day (text)`, `meal_ids (uuid[])`, `updated_at (timestamptz)`
+- `plants`: `id (uuid)`, `name (text)`, `variety (text)`, `location (text)`, `light (text)`, `watering_every (int)`, `last_watered (date)`, `notes (text)`, `status (text)`, `updated_at (timestamptz)`
 
 Recommended indexes:
 - Unique index on `grocery_items (week_start, lower(name), coalesce(unit,''), source)` so manual and generated items can coexist.
